@@ -24,6 +24,18 @@ CREATE TABLE IF NOT EXISTS new_assignments (
     FOREIGN KEY (unit_id) REFERENCES units(unit_id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS creatures (
+    creature_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    stage TEXT DEFAULT 'Egg', -- Egg, Baby, Teen, Adult, etc.
+    health INTEGER DEFAULT 100,
+    strength INTEGER DEFAULT 1,
+    intelligence INTEGER DEFAULT 1,
+    agility INTEGER DEFAULT 1,
+    total_xp_invested INTEGER DEFAULT 0,
+    last_interaction TIMESTAMP
+);
+
 -- 4. Copy existing data from the old table into the new one
 -- (We map the existing columns and leave the new columns as NULL for now)
 INSERT INTO new_assignments (
