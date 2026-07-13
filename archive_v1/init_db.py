@@ -59,6 +59,7 @@ def init_database():
         title TEXT NOT NULL,
         url_link TEXT,
         status TEXT DEFAULT 'pending',
+        standard_tag TEXT, -- NEW COLUMN FOR UTAH STANDARDS,
         due_date DATE,
         start_time TIMESTAMP,
         end_time TIMESTAMP,
