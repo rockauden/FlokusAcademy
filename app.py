@@ -596,6 +596,81 @@ def set_floki_persona(persona):
     conn.commit()
     conn.close()
 
+def generate_quest_question(zone, pet_level):
+    # Fallback questions (if Gemini is offline or fails)
+    fallbacks = {
+        "Ruins": [
+            {"question": "What is 3/4 of 24?", "choices": ["12", "18", "16"], "answer": "18", "hint": "Multiply 24 by 3, then divide by 4."},
+            {"question": "Solve: 5x + 3 = 18. What is x?", "choices": ["3", "4", "5"], "answer": "3", "hint": "Subtract 3 from 18, then divide by 5."},
+            {"question": "Which fraction is equivalent to 0.4?", "choices": ["1/4", "2/5", "4/5"], "answer": "2/5", "hint": "Remember that 0.4 is 4 tenths, which can be simplified."},
+            {"question": "What is the value of 5 + 3 * 2?", "choices": ["16", "11", "13"], "answer": "11", "hint": "Follow the order of operations (PEMDAS): do multiplication first!"}
+        ],
+        "Canyon": [
+            {"question": "Which state of matter is water vapor?", "choices": ["Solid", "Liquid", "Gas"], "answer": "Gas", "hint": "Think about steam rising from a kettle."},
+            {"question": "How many vertices does a cube have?", "choices": ["6", "8", "12"], "answer": "8", "hint": "Count the corners of a 3D box."},
+            {"question": "What kind of simple machine is a slide on a playground?", "choices": ["Lever", "Pulley", "Inclined Plane"], "answer": "Inclined Plane", "hint": "It is a flat surface tilted at an angle."},
+            {"question": "Which of these is a primary producer in an ecosystem?", "choices": ["Grasshopper", "Green Plant", "Frog"], "answer": "Green Plant", "hint": "Producers make their own food using sunlight."}
+        ],
+        "Forge": [
+            {"question": "What is the force that pulls objects toward Earth?", "choices": ["Friction", "Gravity", "Magnetism"], "answer": "Gravity", "hint": "It is what makes an apple fall from a tree."},
+            {"question": "If a rectangle has length 8 and width 5, what is its perimeter?", "choices": ["40", "13", "26"], "answer": "26", "hint": "Add all four sides: 8 + 5 + 8 + 5."},
+            {"question": "Which gas do plants absorb from the atmosphere for photosynthesis?", "choices": ["Oxygen", "Carbon Dioxide", "Nitrogen"], "answer": "Carbon Dioxide", "hint": "It is the gas humans breathe out."},
+            {"question": "What is the freezing point of water in Celsius?", "choices": ["0 degrees", "32 degrees", "100 degrees"], "answer": "0 degrees", "hint": "Celsius is based on the properties of water: 0 is freezing, 100 is boiling."}
+        ]
+    }
+    
+    # Retrieve Gemini key safely
+    gemini_key = ""
+    try:
+        if "GEMINI_API_KEY" in st.secrets:
+            gemini_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        pass
+    if not gemini_key:
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        
+    # Match zone key
+    zone_name = "Ruins"
+    if "Canyon" in zone:
+        zone_name = "Canyon"
+    elif "Forge" in zone:
+        zone_name = "Forge"
+        
+    import random
+    
+    if not gemini_key:
+        return random.choice(fallbacks[zone_name])
+        
+    # Call Gemini to generate a question
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=gemini_key)
+        model = genai.GenerativeModel("gemini-3.5-flash")
+        
+        prompt = f"""
+        Generate one 5th-grade level multiple-choice quest question for a gamified learning app.
+        The question should be themed for this zone: '{zone}' and matches pet level: {pet_level}.
+        
+        Format your response ONLY as a raw JSON object (do not wrap in markdown ```json blocks) conforming to this schema:
+        {{
+          "question": "Question text",
+          "choices": ["Choice A", "Choice B", "Choice C"],
+          "answer": "The exact string of the correct choice matching one in the choices list",
+          "hint": "A gentle Socratic hint that guides the student to the answer"
+        }}
+        """
+        response = model.generate_content(prompt)
+        raw_text = response.text.strip()
+        if raw_text.startswith("```json"):
+            raw_text = raw_text[7:]
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        raw_text = raw_text.strip()
+        
+        return json.loads(raw_text)
+    except Exception:
+        return random.choice(fallbacks[zone_name])
+
 def parse_and_execute_schedule_command(user_input):
     gemini_key = ""
     try:
@@ -1388,6 +1463,8 @@ if user_view == "Sonny (Student)":
             # Check if there is an active quest
             if "active_quest" not in st.session_state:
                 st.session_state.active_quest = None
+            if "quest_hint" not in st.session_state:
+                st.session_state.quest_hint = None
                 
             if st.session_state.active_quest is None:
                 st.write("Send Sparky on an exploration quest to earn extra XP and test its attributes!")
@@ -1415,124 +1492,205 @@ if user_view == "Sonny (Student)":
                             conn.commit()
                             conn.close()
                             
-                            # Initialize Quest encounter
-                            encounters = [
-                                {
-                                    "zone": "📐 The Algebra Ruins (Requires INT)",
-                                    "title": "📐 The Algebra Ruins: Ancient Logic Gate",
-                                    "description": "You stand before a glowing security terminal blocking the tunnel. It requires solving a geometric equation to unlock.",
-                                    "stat_req": "INT",
-                                    "stat_val": 15,
-                                    "action_desc": "Hack Terminal",
-                                    "question": "Solve: 3x - 5 = 10. What is x?",
-                                    "answer": "5"
-                                },
-                                {
-                                    "zone": "🎨 Maker's Canyon (Requires CRT)",
-                                    "title": "🎨 Maker's Canyon: The Suspension Bridge",
-                                    "description": "A deep gorge separates you from the other side. You need to construct a suspension bridge from scattered branches.",
-                                    "stat_req": "CRT",
-                                    "stat_val": 15,
-                                    "action_desc": "Build Bridge",
-                                    "question": "What runs but never walks, has a mouth but never talks? (Hint: a r____)",
-                                    "answer": "river"
-                                },
-                                {
-                                    "zone": "🌋 Titan's Forge (Requires STR)",
-                                    "title": "🌋 Titan's Forge: The Blocking Boulder",
-                                    "description": "A massive volcanic stone has rolled down the slope, blocking the passage.",
-                                    "stat_req": "STR",
-                                    "stat_val": 15,
-                                    "action_desc": "Smash Boulder",
-                                    "question": "A rectangle has a width of 4 and a length of 6. What is its area?",
-                                    "answer": "24"
-                                }
-                            ]
-                            
-                            selected_enc = [e for e in encounters if e["zone"] == zone][0]
-                            st.session_state.active_quest = selected_enc
+                            # Initialize Quest map crawler state
+                            st.session_state.active_quest = {
+                                "zone": zone,
+                                "stat_req": "INT" if "INT" in zone else ("CRT" if "CRT" in zone else "STR"),
+                                "stat_val": 15,
+                                "current_room": 1,
+                                "room_states": {1: "Active", 2: "Locked", 3: "Locked"},
+                                "questions": {1: None, 2: None, 3: None}
+                            }
+                            st.session_state.quest_hint = None
                             st.rerun()
             else:
-                enc = st.session_state.active_quest
-                st.info(f"📍 Current Zone: **{enc['zone']}**")
-                with st.container(border=True):
-                    st.subheader(enc["title"])
-                    st.write(enc["description"])
-                    st.write(f"**Stat Check:** {enc['stat_req']} >= {enc['stat_val']}")
-                    
-                    # Determine success based on pet stat
-                    pet_stat_val = intelligence if enc["stat_req"] == "INT" else (creativity if enc["stat_req"] == "CRT" else strength)
-                    can_bypass = pet_stat_val >= enc["stat_val"]
-                    
-                    col_opt_a, col_opt_b = st.columns(2)
-                    
-                    with col_opt_a:
-                        st.markdown("#### Choice A: Stat Auto-Check")
-                        if can_bypass:
-                            st.success(f"Sparky is ready! ({enc['stat_req']} = {pet_stat_val} >= {enc['stat_val']})")
-                            if st.button("Execute Option A", use_container_width=True):
-                                # Award XP
-                                conn = sqlite3.connect('flokus.db')
-                                cursor = conn.cursor()
-                                new_xp = pet_xp + 20
-                                next_lvl_xp = int(100 * (pet_level)**1.8)
-                                new_lvl = pet_level
-                                new_stage = stage
-                                new_form = form_name
-                                if new_xp >= next_lvl_xp:
-                                    new_lvl += 1
-                                    new_xp = max(0, new_xp - next_lvl_xp)
-                                    new_stage, new_form = calculate_evolution_internal(new_lvl, strength, intelligence, creativity)
-                                cursor.execute("""
-                                    UPDATE pet_status 
-                                    SET level = ?, current_xp = ?, stage = ?, form_name = ? 
-                                    WHERE id = ?
-                                """, (new_lvl, new_xp, new_stage, new_form, pet_id))
-                                conn.commit()
-                                conn.close()
-                                
-                                st.session_state.active_quest = None
-                                st.toast("🎉 Quest Completed! Sparky earned 20 XP!")
-                                st.rerun()
-                        else:
-                            st.warning(f"Sparky is too weak! ({enc['stat_req']} = {pet_stat_val} < {enc['stat_val']})")
-                            st.button("Execute Option A (Locked)", disabled=True, use_container_width=True)
+                quest = st.session_state.active_quest
+                st.info(f"📍 Current Zone: **{quest['zone']}**")
+                
+                # Render Visual Map Grid
+                cols_map = st.columns(3)
+                room_names = {
+                    1: "🚪 Entrance",
+                    2: "🧬 Chamber of Trials",
+                    3: "👑 Boss Lair"
+                }
+                
+                for r in [1, 2, 3]:
+                    state = quest["room_states"][r]
+                    with cols_map[r - 1]:
+                        if state == "Cleared":
+                            st.markdown(
+                                f"""
+                                <div style="background-color: #0e2b17; border: 2px solid #22c55e; box-shadow: 0 0 10px rgba(34, 197, 94, 0.2); border-radius: 10px; padding: 12px; text-align: center; color: #22c55e; height: 95px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                    <strong style="font-size: 14px; margin: 0;">✅ Cleared</strong>
+                                    <span style="font-size: 12px; color: #a3e635; margin: 0;">{room_names[r]}</span>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                        elif state == "Active":
+                            st.markdown(
+                                f"""
+                                <div style="background: linear-gradient(135deg, #1e1e3f 0%, #111126 100%); border: 2px solid #6366f1; box-shadow: 0 0 15px rgba(99, 102, 241, 0.4); border-radius: 10px; padding: 12px; text-align: center; color: #a5b4fc; height: 95px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                    <strong style="font-size: 14px; margin: 0;">📍 Active</strong>
+                                    <span style="font-size: 12px; color: #c7d2fe; margin: 0;">{room_names[r]}</span>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
+                        else: # Locked
+                            st.markdown(
+                                f"""
+                                <div style="background-color: #161622; border: 2px dashed #4b5563; border-radius: 10px; padding: 12px; text-align: center; color: #4b5563; height: 95px; display: flex; flex-direction: column; justify-content: center; align-items: center;">
+                                    <strong style="font-size: 14px; color: #4b5563; margin: 0;">🔒 Locked</strong>
+                                    <span style="font-size: 12px; color: #4b5563; margin: 0;">{room_names[r]}</span>
+                                </div>
+                                """,
+                                unsafe_allow_html=True
+                            )
                             
-                    with col_opt_b:
-                        st.markdown("#### Choice B: Real-World Power-up")
-                        st.write("Help your pet bypass the challenge by answering this learning riddle:")
-                        st.write(f"💬 **{enc['question']}**")
-                        ans_input = st.text_input("Enter Answer:", key="riddle_answer_input")
-                        if st.button("Submit Answer", use_container_width=True):
-                            if ans_input.strip().lower() == enc["answer"]:
-                                # Award XP + Bonus!
-                                conn = sqlite3.connect('flokus.db')
-                                cursor = conn.cursor()
-                                new_xp = pet_xp + 40
-                                next_lvl_xp = int(100 * (pet_level)**1.8)
-                                new_lvl = pet_level
-                                new_stage = stage
-                                new_form = form_name
-                                if new_xp >= next_lvl_xp:
-                                    new_lvl += 1
-                                    new_xp = max(0, new_xp - next_lvl_xp)
-                                    new_stage, new_form = calculate_evolution_internal(new_lvl, strength, intelligence, creativity)
+                active_room = quest["current_room"]
+                
+                # Fetch question dynamically if not cached
+                if quest["questions"][active_room] is None:
+                    with st.spinner("Floki is crafting a learning challenge for this room... ⚡"):
+                        quest["questions"][active_room] = generate_quest_question(quest["zone"], pet_level)
+                        
+                q_data = quest["questions"][active_room]
+                
+                room_descriptions = {
+                    1: "You push open the heavy stone double doors and step into the entry corridor. A glowing logic barrier blocks the path.",
+                    2: "You enter the Chamber of Trials. Swirling elemental energy currents surround a locked vault in the center.",
+                    3: "The ground shakes! You face the mighty Guardian of the Zone in the Boss Lair. Solve this final query to conquer the quest!"
+                }
+                
+                st.write("")
+                with st.container(border=True):
+                    st.subheader(f"{room_names[active_room]}: Encounter")
+                    st.write(room_descriptions[active_room])
+                    
+                    st.divider()
+                    st.markdown("#### 🧠 Challenge Question:")
+                    st.write(f"💬 **{q_data['question']}**")
+                    
+                    if st.session_state.quest_hint:
+                         st.info(f"💡 **Floki's Socratic Hint:** {st.session_state.quest_hint}")
+                         
+                    st.write("")
+                    
+                    choices = q_data["choices"]
+                    while len(choices) < 3:
+                        choices.append("Option")
+                        
+                    col_c1, col_c2, col_c3 = st.columns(3)
+                    selected_ans = None
+                    
+                    with col_c1:
+                        if st.button(f"🅰️ {choices[0]}", key=f"q_choice_0_{active_room}", use_container_width=True):
+                            selected_ans = choices[0]
+                    with col_c2:
+                        if st.button(f"🅱️ {choices[1]}", key=f"q_choice_1_{active_room}", use_container_width=True):
+                            selected_ans = choices[1]
+                    with col_c3:
+                        if st.button(f"🆃 {choices[2]}", key=f"q_choice_2_{active_room}", use_container_width=True):
+                            selected_ans = choices[2]
+                            
+                    if selected_ans is not None:
+                        if selected_ans.strip().lower() == q_data["answer"].strip().lower():
+                            # CORRECT ANSWER
+                            st.session_state.quest_hint = None
+                            
+                            conn = sqlite3.connect('flokus.db')
+                            cursor = conn.cursor()
+                            
+                            is_boss = (active_room == 3)
+                            xp_gain = 50 if is_boss else 20
+                            
+                            # Award XP to pet
+                            new_xp = pet_xp + xp_gain
+                            next_lvl_xp = int(100 * (pet_level)**1.8)
+                            new_lvl = pet_level
+                            new_stage = stage
+                            new_form = form_name
+                            
+                            if new_xp >= next_lvl_xp:
+                                new_lvl += 1
+                                new_xp = max(0, new_xp - next_lvl_xp)
+                                new_stage, new_form = calculate_evolution_internal(new_lvl, strength, intelligence, creativity)
+                                
+                            stat_gain_str = ""
+                            if is_boss:
+                                # Increase all stats by 2
                                 cursor.execute("""
                                     UPDATE pet_status 
-                                    SET level = ?, current_xp = ?, stage = ?, form_name = ? 
+                                    SET level = ?, current_xp = ?, stage = ?, form_name = ?,
+                                        strength = strength + 2, intelligence = intelligence + 2, creativity = creativity + 2
                                     WHERE id = ?
                                 """, (new_lvl, new_xp, new_stage, new_form, pet_id))
-                                conn.commit()
-                                conn.close()
+                                stat_gain_str = " +2 to all stats!"
                                 
-                                st.session_state.active_quest = None
-                                st.toast("🎉 Correct! Academic powerup cleared the way! Earned 40 XP!")
+                                # Add bonus random item
+                                import random
+                                bonus_items = ["🥩 Cyber-Protein", "💾 Memory Chip", "⚡ Giga-Soda", "🔮 Omni-Treat"]
+                                won_item = random.choice(bonus_items)
+                                cursor.execute("""
+                                    INSERT INTO pet_inventory (item_name, quantity) 
+                                    VALUES (?, 1) 
+                                    ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + 1
+                                """, (won_item,))
+                                stat_gain_str += f" Also found 1x {won_item}!"
+                            else:
+                                # Increase active zone stat by 1
+                                stat_to_up = "intelligence" if "INT" in quest["zone"] else ("creativity" if "CRT" in quest["zone"] else "strength")
+                                cursor.execute(f"""
+                                    UPDATE pet_status 
+                                    SET level = ?, current_xp = ?, stage = ?, form_name = ?,
+                                        {stat_to_up} = {stat_to_up} + 1
+                                    WHERE id = ?
+                                """, (new_lvl, new_xp, new_stage, new_form, pet_id))
+                                stat_gain_str = f" +1 {stat_to_up.upper()}!"
+                                
+                            conn.commit()
+                            conn.close()
+                            
+                            # Advance Quest Map state
+                            quest["room_states"][active_room] = "Cleared"
+                            
+                            if active_room < 3:
+                                quest["current_room"] += 1
+                                quest["room_states"][quest["current_room"]] = "Active"
+                                st.toast(f"🎉 Correct! Room {active_room} cleared! Sparky gained {xp_gain} XP & {stat_gain_str}")
                                 st.rerun()
                             else:
-                                st.error("Incorrect answer. Try again!")
+                                st.session_state.active_quest = None
+                                st.success(f"🏆 QUEST COMPLETED! Sparky conquered the dungeon and gained {xp_gain} XP!{stat_gain_str}")
+                                if st.button("Collect Loot & Finish", use_container_width=True):
+                                    st.rerun()
+                        else:
+                            # INCORRECT ANSWER
+                            conn = sqlite3.connect('flokus.db')
+                            cursor = conn.cursor()
+                            cursor.execute("UPDATE pet_status SET stamina = MAX(0, stamina - 1) WHERE id = ?", (pet_id,))
+                            conn.commit()
+                            
+                            cursor.execute("SELECT stamina FROM pet_status WHERE id = ?", (pet_id,))
+                            new_stam = cursor.fetchone()[0]
+                            conn.close()
+                            
+                            if new_stam <= 0:
+                                st.session_state.active_quest = None
+                                st.session_state.quest_hint = None
+                                st.error("💥 Sparky ran out of Stamina and became exhausted! The quest failed. Feed Sparky to restore energy.")
+                                if st.button("Return to Hub", use_container_width=True):
+                                    st.rerun()
+                            else:
+                                st.session_state.quest_hint = q_data.get("hint", "Try another guess!")
+                                st.error(f"❌ Incorrect! Sparky lost 1 energy (Stamina remaining: {new_stam}). Review Floki's hint and try again!")
+                                st.rerun()
                                 
-                if st.button("🏳️ Retreat from Quest", key="retreat_quest_btn"):
+                if st.button("🏳️ Retreat from Quest", key="retreat_quest_btn", use_container_width=True):
                     st.session_state.active_quest = None
+                    st.session_state.quest_hint = None
                     st.rerun()
 
     with tab_ai:
