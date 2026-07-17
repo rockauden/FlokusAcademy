@@ -165,6 +165,37 @@ def verify_db_schema():
         cursor.execute("SELECT id FROM rewards WHERE name = ?", (name,))
         if not cursor.fetchone():
             cursor.execute("INSERT INTO rewards (name, xp_cost, inventory_qty) VALUES (?, ?, ?)", (name, cost, qty))
+
+    # --- NEW: Seed Real-World Incentives (Economic values) ---
+    real_world_rewards = [
+        ("🪙 800 Minecoins (Minecraft)", 500, 5),
+        ("🪨 1000 Shiny Rocks (Gorilla Tag)", 500, 5),
+        ("🎮 1 Hour Gaming/YouTube Time", 100, 10),
+        ("📅 1 Day Off Studies", 1000, 2),
+        ("💵 $5 Cash Exchange", 250, 5),
+        ("🕹️ New Game (Up to $20)", 1500, 1)
+    ]
+    for name, cost, qty in real_world_rewards:
+        cursor.execute("SELECT id FROM rewards WHERE name = ?", (name,))
+        if not cursor.fetchone():
+            cursor.execute("INSERT INTO rewards (name, xp_cost, inventory_qty) VALUES (?, ?, ?)", (name, cost, qty))
+            
+    # --- NEW: Create quest_completions table ---
+    try:
+        cursor.execute("SELECT id FROM quest_completions LIMIT 1")
+    except sqlite3.OperationalError:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS quest_completions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                zone TEXT NOT NULL,
+                room INTEGER NOT NULL,
+                xp_reward INTEGER NOT NULL,
+                completion_date TEXT NOT NULL
+            )
+        """)
+        conn.commit()
+    # --- END NEW ---
+
     # 6. Verify purchases table is_claimed column exists
     try:
         cursor.execute("SELECT is_claimed FROM purchases LIMIT 1")
@@ -842,11 +873,14 @@ def get_xp_balance():
     cursor.execute("SELECT SUM(xp_reward) FROM creator_projects WHERE status = 'Completed'")
     earned_projects = cursor.fetchone()[0] or 0
     
+    cursor.execute("SELECT SUM(xp_reward) FROM quest_completions")
+    earned_quests = cursor.fetchone()[0] or 0
+    
     cursor.execute("SELECT SUM(xp_cost) FROM purchases")
     spent = cursor.fetchone()[0] or 0
     
     conn.close()
-    return (earned_tasks + earned_projects) - spent
+    return (earned_tasks + earned_projects + earned_quests) - spent
 
 def get_purchase_history():
     conn = sqlite3.connect('flokus.db')
@@ -1649,6 +1683,13 @@ if user_view == "Sonny (Student)":
                                     WHERE id = ?
                                 """, (new_lvl, new_xp, new_stage, new_form, pet_id))
                                 stat_gain_str = f" +1 {stat_to_up.upper()}!"
+                                
+                            # Record quest completion for Sonny's student XP balance
+                            today_str = date.today().strftime("%Y-%m-%d")
+                            cursor.execute("""
+                                INSERT INTO quest_completions (zone, room, xp_reward, completion_date)
+                                VALUES (?, ?, ?, ?)
+                            """, (quest["zone"], active_room, xp_gain, today_str))
                                 
                             conn.commit()
                             conn.close()
