@@ -1,1 +1,6 @@
 flokus_academy.db
+__pycache__/
+*.pyc
+scratch/
+.DS_Store
+.streamlit/secrets.toml

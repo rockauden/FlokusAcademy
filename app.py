@@ -1,1017 +1,82 @@
 import streamlit as st
-import sqlite3
-from datetime import date, datetime, timedelta
 import pandas as pd
 import time
 import os
+import socket
+import json
+from datetime import date, datetime, timedelta
+import html
 
-# ==========================================
-# DATABASE SETUP & HELPER FUNCTIONS
-# ==========================================
+# Import custom refactored modules
+import config
+import database
+import ai_tutor
 
-def verify_db_schema():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    # Verify inventory_qty column in rewards table
-    try:
-        cursor.execute("SELECT inventory_qty FROM rewards LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE rewards ADD COLUMN inventory_qty INTEGER DEFAULT 1")
-        conn.commit()
-        
-    # Verify is_boss_fight column in tasks table
-    try:
-        cursor.execute("SELECT is_boss_fight FROM tasks LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN is_boss_fight INTEGER DEFAULT 0")
-        conn.commit()
-        
-    # Verify task_summary column in tasks table
-    try:
-        cursor.execute("SELECT task_summary FROM tasks LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN task_summary TEXT DEFAULT ''")
-        conn.commit()
-        
-    # Verify creator_projects table exists
-    try:
-        cursor.execute("SELECT id FROM creator_projects LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS creator_projects (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT,
-                platform TEXT,
-                status TEXT DEFAULT 'In Progress',
-                xp_reward INTEGER
-            )
-        """)
-        conn.commit()
+# Initialize/verify database structure
+database.init_db()
 
-    # Verify self-healing upgrade for Creator Projects Portfolio Tracking
-    try:
-        cursor.execute("SELECT completion_date FROM creator_projects LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE creator_projects ADD COLUMN completion_date TEXT DEFAULT ''")
-        cursor.execute("ALTER TABLE creator_projects ADD COLUMN project_summary TEXT DEFAULT ''")
-        conn.commit()
-    
-    # --- NEW: Self-Healing Focus Minutes Tracker Column ---
-    try:
-        cursor.execute("SELECT focus_minutes FROM tasks LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN focus_minutes INTEGER DEFAULT 0")
-        conn.commit()
-    # --- END NEW ---
-    
-    # --- NEW: Self-Healing Actual Completion Date Stamp Column ---
-    try:
-        cursor.execute("SELECT actual_completion_date FROM tasks LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE tasks ADD COLUMN actual_completion_date TEXT DEFAULT ''")
-        conn.commit()
-    # --- END NEW ---
-    
-    # --- NEW: Self-Healing Creator Projects Media Attachment Column ---
-    try:
-        cursor.execute("SELECT project_attachment FROM creator_projects LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE creator_projects ADD COLUMN project_attachment TEXT DEFAULT ''")
-        conn.commit()
-    # --- END NEW ---
-    
-    # --- NEW: Digital Pet & AI Chat Tables Migration ---
-    # 1. Verify pet_status table
-    try:
-        cursor.execute("SELECT id FROM pet_status LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pet_status (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                pet_name TEXT NOT NULL,
-                level INTEGER DEFAULT 1,
-                current_xp INTEGER DEFAULT 0,
-                strength INTEGER DEFAULT 5,
-                intelligence INTEGER DEFAULT 5,
-                creativity INTEGER DEFAULT 5,
-                stamina INTEGER DEFAULT 10,
-                max_stamina INTEGER DEFAULT 10,
-                happiness INTEGER DEFAULT 100,
-                stage TEXT DEFAULT 'Egg',
-                form_name TEXT DEFAULT 'Cosmic Egg',
-                accessory_parts TEXT DEFAULT '[]'
-            )
-        """)
-        cursor.execute("INSERT INTO pet_status (pet_name, stage, form_name) VALUES ('Sparky', 'Egg', 'Cosmic Egg')")
-        conn.commit()
+# Global database compatibility wrappers to preserve existing UI code without prefixing
+verify_db_schema = database.verify_db_schema
+add_creator_project = database.add_creator_project
+get_active_projects = database.get_active_projects
+complete_creator_project = database.complete_creator_project
+get_completed_projects = database.get_completed_projects
+add_task_to_db = database.add_task_to_db
+get_pending_tasks = database.get_pending_tasks
+complete_task = database.complete_task
+get_completed_tasks = database.get_completed_tasks
+delete_task = database.delete_task
+update_task_details = database.update_task_details
+get_all_pending_tasks = database.get_all_pending_tasks
+update_creator_project = database.update_creator_project
+delete_creator_project = database.delete_creator_project
+update_expense_details = database.update_expense_details
+get_pet_status = database.get_pet_status
+use_pet_item = database.use_pet_item
+add_chat_msg = database.add_chat_msg
+get_chat_history = database.get_chat_history
+get_floki_persona = database.get_floki_persona
+set_floki_persona = database.set_floki_persona
+add_expense = database.add_expense
+get_all_expenses = database.get_all_expenses
+update_expense_status = database.update_expense_status
+delete_expense = database.delete_expense
+add_reward = database.add_reward
+get_rewards = database.get_rewards
+update_reward_details = database.update_reward_details
+delete_reward = database.delete_reward
+buy_reward = database.buy_reward
+get_xp_balance = database.get_xp_balance
+get_purchase_history = database.get_purchase_history
+get_task_completion_stats = database.get_task_completion_stats
+get_xp_over_time = database.get_xp_over_time
+get_daily_streak = database.get_daily_streak
+get_expense_totals_by_status = database.get_expense_totals_by_status
+get_full_portfolio_data = database.get_full_portfolio_data
+get_pet_inventory = database.get_pet_inventory
+deduct_pet_stamina = database.deduct_pet_stamina
+complete_quest_room = database.complete_quest_room
+fail_quest_room = database.fail_quest_room
+get_all_creator_projects = database.get_all_creator_projects
+get_all_purchases = database.get_all_purchases
+mark_purchase_claimed = database.mark_purchase_claimed
+get_active_task_dates = database.get_active_task_dates
+get_completed_projects_by_platform = database.get_completed_projects_by_platform
+get_total_focus_minutes = database.get_total_focus_minutes
+get_autonomy_metrics = database.get_autonomy_metrics
+clear_chat_history = database.clear_chat_history
+override_pet_status = database.override_pet_status
 
-    # 2. Verify pet_inventory table
-    try:
-        cursor.execute("SELECT id FROM pet_inventory LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pet_inventory (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item_name TEXT UNIQUE,
-                quantity INTEGER DEFAULT 0
-            )
-        """)
-        cursor.execute("INSERT OR IGNORE INTO pet_inventory (item_name, quantity) VALUES ('🥩 Cyber-Protein', 2)")
-        cursor.execute("INSERT OR IGNORE INTO pet_inventory (item_name, quantity) VALUES ('💾 Memory Chip', 2)")
-        cursor.execute("INSERT OR IGNORE INTO pet_inventory (item_name, quantity) VALUES ('🖌️ Chameleon Ink', 2)")
-        cursor.execute("INSERT OR IGNORE INTO pet_inventory (item_name, quantity) VALUES ('⚡ Giga-Soda', 1)")
-        conn.commit()
+add_school_event = database.add_school_event
+get_school_events = database.get_school_events
+get_upcoming_event_notifications = database.get_upcoming_event_notifications
+update_school_event = database.update_school_event
+delete_school_event = database.delete_school_event
+get_next_major_school_event = database.get_next_major_school_event
 
-    # 3. Verify pet_quests table
-    try:
-        cursor.execute("SELECT id FROM pet_quests LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS pet_quests (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                zone_name TEXT NOT NULL,
-                stage_progress INTEGER DEFAULT 1,
-                active_quest_state TEXT DEFAULT NULL
-            )
-        """)
-        conn.commit()
-
-    # 4. Verify chat_history table
-    try:
-        cursor.execute("SELECT id FROM chat_history LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                sender TEXT NOT NULL,
-                message TEXT NOT NULL,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-
-    # 5. Auto-seed XP Store with Pet Care items if missing
-    pet_store_items = [
-        ("🥩 Cyber-Protein", 25, 10),
-        ("💾 Memory Chip", 25, 10),
-        ("🖌️ Chameleon Ink", 25, 10),
-        ("⚡ Giga-Soda", 15, 10),
-        ("🔮 Omni-Treat", 35, 5),
-        ("🗝️ Evolution Matrix", 100, 2)
-    ]
-    for name, cost, qty in pet_store_items:
-        cursor.execute("SELECT id FROM rewards WHERE name = ?", (name,))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO rewards (name, xp_cost, inventory_qty) VALUES (?, ?, ?)", (name, cost, qty))
-
-    # --- NEW: Seed Real-World Incentives (Economic values) ---
-    real_world_rewards = [
-        ("🪙 800 Minecoins (Minecraft)", 500, 5),
-        ("🪨 1000 Shiny Rocks (Gorilla Tag)", 500, 5),
-        ("🎮 1 Hour Gaming/YouTube Time", 100, 10),
-        ("📅 1 Day Off Studies", 1000, 2),
-        ("💵 $5 Cash Exchange", 250, 5),
-        ("🕹️ New Game (Up to $20)", 1500, 1)
-    ]
-    for name, cost, qty in real_world_rewards:
-        cursor.execute("SELECT id FROM rewards WHERE name = ?", (name,))
-        if not cursor.fetchone():
-            cursor.execute("INSERT INTO rewards (name, xp_cost, inventory_qty) VALUES (?, ?, ?)", (name, cost, qty))
-            
-    # --- NEW: Create quest_completions table ---
-    try:
-        cursor.execute("SELECT id FROM quest_completions LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS quest_completions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                zone TEXT NOT NULL,
-                room INTEGER NOT NULL,
-                xp_reward INTEGER NOT NULL,
-                completion_date TEXT NOT NULL
-            )
-        """)
-        conn.commit()
-    # --- END NEW ---
-
-    # 6. Verify purchases table is_claimed column exists
-    try:
-        cursor.execute("SELECT is_claimed FROM purchases LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("ALTER TABLE purchases ADD COLUMN is_claimed INTEGER DEFAULT 0")
-        conn.commit()
-
-    # 7. Verify app_config table exists
-    try:
-        cursor.execute("SELECT key FROM app_config LIMIT 1")
-    except sqlite3.OperationalError:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS app_config (
-                key TEXT UNIQUE,
-                value TEXT
-            )
-        """)
-        cursor.execute("INSERT OR IGNORE INTO app_config (key, value) VALUES ('floki_persona', 'Socratic Tutor')")
-        conn.commit()
-    # --- END NEW ---
-    
-    conn.close()
-
-verify_db_schema()
-
-def add_creator_project(title, platform, xp_reward):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO creator_projects (title, platform, xp_reward) VALUES (?, ?, ?)", (title, platform, xp_reward))
-    conn.commit()
-    conn.close()
-
-def get_active_projects():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, title, platform, xp_reward FROM creator_projects WHERE status = 'In Progress'")
-    projects = cursor.fetchall()
-    conn.close()
-    return projects
-
-def complete_creator_project(project_id, summary="", attachment=""):
-    today_string = date.today().strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    # 1. Fetch project details
-    cursor.execute("SELECT xp_reward FROM creator_projects WHERE id = ?", (project_id,))
-    row = cursor.fetchone()
-    
-    cursor.execute("""
-        UPDATE creator_projects 
-        SET status = 'Completed', completion_date = ?, project_summary = ?, project_attachment = ? 
-        WHERE id = ?
-    """, (today_string, summary, attachment, project_id))
-    
-    # 3. Update pet XP & Stats if details found
-    if row:
-        xp_earned = row[0]
-        cursor.execute("SELECT id, level, current_xp, strength, intelligence, creativity, stage, form_name FROM pet_status LIMIT 1")
-        pet = cursor.fetchone()
-        if pet:
-            p_id, level, current_xp, str_val, int_val, crt_val, stage, form_name = pet
-            
-            # Creator projects boost Creativity massively!
-            new_crt = crt_val + 5
-            new_str = str_val + 1
-            new_int = int_val
-            
-            new_xp = current_xp + xp_earned
-            next_level_xp = int(100 * (level)**1.8)
-            new_level = level
-            new_stage = stage
-            new_form = form_name
-            
-            if new_xp >= next_level_xp:
-                new_level += 1
-                new_xp = max(0, new_xp - next_level_xp)
-                new_stage, new_form = calculate_evolution_internal(new_level, new_str, new_int, new_crt)
-                
-            cursor.execute("""
-                UPDATE pet_status 
-                SET level = ?, current_xp = ?, strength = ?, intelligence = ?, creativity = ?, stage = ?, form_name = ?
-                WHERE id = ?
-            """, (new_level, new_xp, new_str, new_int, new_crt, new_stage, new_form, p_id))
-            
-    conn.commit()
-    conn.close()
-
-def get_completed_projects(view_date):
-    date_string = view_date.strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, title, platform, xp_reward, project_summary, project_attachment 
-        FROM creator_projects 
-        WHERE status = 'Completed' AND completion_date = ?
-    """, (date_string,))
-    projects = cursor.fetchall()
-    conn.close()
-    return projects
-
-def add_task_to_db(title, category, video_url, xp_reward, target_date, is_boss):
-    date_string = target_date.strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO tasks (title, category, task_date, video_url, xp_reward, is_boss_fight) 
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (title, category, date_string, video_url, xp_reward, is_boss))
-    conn.commit()
-    conn.close()
-
-def get_pending_tasks(view_date):
-    date_string = view_date.strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    if view_date == date.today():
-        cursor.execute("""
-            SELECT id, title, category, video_url, xp_reward, is_boss_fight 
-            FROM tasks 
-            WHERE is_completed = 0 AND task_date <= ?
-            ORDER BY task_date ASC
-        """, (date_string,))
-    else:
-        cursor.execute("""
-            SELECT id, title, category, video_url, xp_reward, is_boss_fight 
-            FROM tasks 
-            WHERE is_completed = 0 AND task_date = ?
-        """, (date_string,))
-        
-    tasks = cursor.fetchall()
-    conn.close()
-    return tasks
-
-# --- NEW: Adapt complete_task to accept focus runtime metrics and update pet status ---
-def complete_task(task_id, summary="", minutes=0):
-    # --- NEW: Auto-stamp today's string on task completion ---
-    today_str = date.today().strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    # 1. Fetch details of task before completing it
-    cursor.execute("SELECT category, is_boss_fight, xp_reward FROM tasks WHERE id = ?", (task_id,))
-    row = cursor.fetchone()
-    
-    cursor.execute("""
-        UPDATE tasks 
-        SET is_completed = 1, task_summary = ?, focus_minutes = ?, actual_completion_date = ? 
-        WHERE id = ?
-    """, (summary, minutes, today_str, task_id))
-    
-    # 3. Update pet XP & Stats if task details are found
-    if row:
-        category, is_boss, xp = row
-        xp_earned = xp * 2 if is_boss == 1 else xp
-        
-        # Get pet status
-        cursor.execute("SELECT id, level, current_xp, strength, intelligence, creativity, stage, form_name FROM pet_status LIMIT 1")
-        pet = cursor.fetchone()
-        if pet:
-            p_id, level, current_xp, str_val, int_val, crt_val, stage, form_name = pet
-            
-            # Determine stat updates
-            new_int = int_val
-            new_str = str_val
-            new_crt = crt_val
-            
-            if "Math" in category or "Logic" in category:
-                new_int += 1
-            elif "Language" in category or "Creator" in category or "STEM" in category:
-                new_crt += 1
-                
-            if is_boss == 1:
-                new_str += 2
-            else:
-                new_str += 1
-                
-            # Update XP
-            new_xp = current_xp + xp_earned
-            next_level_xp = int(100 * (level)**1.8)
-            new_level = level
-            new_stage = stage
-            new_form = form_name
-            
-            if new_xp >= next_level_xp:
-                new_level += 1
-                new_xp = max(0, new_xp - next_level_xp)
-                new_stage, new_form = calculate_evolution_internal(new_level, new_str, new_int, new_crt)
-                
-            cursor.execute("""
-                UPDATE pet_status 
-                SET level = ?, current_xp = ?, strength = ?, intelligence = ?, creativity = ?, stage = ?, form_name = ?
-                WHERE id = ?
-            """, (new_level, new_xp, new_str, new_int, new_crt, new_stage, new_form, p_id))
-            
-    conn.commit()
-    conn.close()
-    # --- END NEW ---
-
-def get_completed_tasks(view_date):
-    date_string = view_date.strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, title, category, video_url, xp_reward, is_boss_fight, task_summary 
-        FROM tasks 
-        WHERE is_completed = 1 AND task_date = ?
-    """, (date_string,))
-    tasks = cursor.fetchall()
-    conn.close()
-    return tasks
-
-def delete_task(task_id):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
-    conn.commit()
-    conn.close()
-
-# --- NEW: Task management and database CRUD helper functions ---
-def update_task_details(task_id, title, category, video_url, xp_reward, target_date, is_boss):
-    date_string = target_date.strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE tasks 
-        SET title = ?, category = ?, video_url = ?, xp_reward = ?, task_date = ?, is_boss_fight = ?
-        WHERE id = ?
-    """, (title, category, video_url, xp_reward, date_string, is_boss, task_id))
-    conn.commit()
-    conn.close()
-
-def get_all_pending_tasks():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, title, category, video_url, xp_reward, is_boss_fight, task_date 
-        FROM tasks 
-        WHERE is_completed = 0 
-        ORDER BY task_date ASC, id ASC
-    """)
-    tasks = cursor.fetchall()
-    conn.close()
-    return tasks
-
-def update_creator_project(project_id, title, platform, xp_reward, status="In Progress", completion_date="", project_summary="", project_attachment=""):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE creator_projects 
-        SET title = ?, platform = ?, xp_reward = ?, status = ?, completion_date = ?, project_summary = ?, project_attachment = ?
-        WHERE id = ?
-    """, (title, platform, xp_reward, status, completion_date, project_summary, project_attachment, project_id))
-    conn.commit()
-    conn.close()
-
-def delete_creator_project(project_id):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM creator_projects WHERE id = ?", (project_id,))
-    conn.commit()
-    conn.close()
-
-def update_expense_details(expense_id, item_name, cost, category, status):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE expenses 
-        SET item_name = ?, cost = ?, category = ?, status = ?
-        WHERE id = ?
-    """, (item_name, cost, category, status, expense_id))
-    conn.commit()
-    conn.close()
-
-# --- NEW: Digital Pet and AI Chat Helpers ---
-def calculate_evolution_internal(level, strength, intelligence, creativity):
-    if level >= 51:
-        return "Mega", "Mecha-Wyrm 🐉"
-    elif level >= 31:
-        return "Ultimate", "Matrix-Colossus 🕷️"
-    elif level >= 16:
-        top_stat = max(strength, intelligence, creativity)
-        if top_stat == intelligence:
-            return "Champion", "Cyber-Drake 🐉"
-        elif top_stat == creativity:
-            return "Champion", "Origami-Phoenix 🐦"
-        else:
-            return "Champion", "Mecha-Gorilla 🦍"
-    elif level >= 6:
-        top_stat = max(strength, intelligence, creativity)
-        if top_stat == intelligence:
-            return "Rookie", "Techno-Mite 🐜"
-        elif top_stat == creativity:
-            return "Rookie", "Chalk-Pup 🎨"
-        else:
-            return "Rookie", "Brawn-Chimp 🐒"
-    elif level >= 2:
-        return "Baby", "Omni-Blob 🧬"
-    else:
-        return "Egg", "Cosmic Egg 🥚"
-
-def get_pet_status():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, pet_name, level, current_xp, strength, intelligence, creativity, stamina, max_stamina, happiness, stage, form_name, accessory_parts 
-        FROM pet_status LIMIT 1
-    """)
-    pet = cursor.fetchone()
-    conn.close()
-    return pet
-
-def use_pet_item(item_name):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    # Verify quantity
-    cursor.execute("SELECT quantity FROM pet_inventory WHERE item_name = ?", (item_name,))
-    row = cursor.fetchone()
-    if not row or row[0] <= 0:
-        conn.close()
-        return "⚠️ You don't have this item in stock!"
-        
-    # Deduct quantity
-    cursor.execute("UPDATE pet_inventory SET quantity = quantity - 1 WHERE item_name = ?", (item_name,))
-    
-    # Get pet stats
-    cursor.execute("SELECT id, strength, intelligence, creativity, stamina, max_stamina FROM pet_status LIMIT 1")
-    pet = cursor.fetchone()
-    if pet:
-        p_id, str_val, int_val, crt_val, stam, max_stam = pet
-        new_str = str_val
-        new_int = int_val
-        new_crt = crt_val
-        new_stam = stam
-        
-        stat_effect = ""
-        if "Cyber-Protein" in item_name:
-            new_str += 3
-            stat_effect = "Strength +3"
-        elif "Memory Chip" in item_name:
-            new_int += 3
-            stat_effect = "Intelligence +3"
-        elif "Chameleon Ink" in item_name:
-            new_crt += 3
-            stat_effect = "Creativity +3"
-        elif "Giga-Soda" in item_name:
-            new_stam = min(max_stam, new_stam + 5)
-            stat_effect = "Stamina +5"
-        elif "Omni-Treat" in item_name:
-            new_str += 1
-            new_int += 1
-            new_crt += 1
-            new_stam = min(max_stam, new_stam + 2)
-            stat_effect = "All Stats +1, Stamina +2"
-        elif "Evolution Matrix" in item_name:
-            # Evolution matrix acts as a level up trigger / evolution force
-            # Give enough XP to reach next level
-            # Get current level and XP
-            cursor.execute("SELECT level, current_xp FROM pet_status WHERE id = ?", (p_id,))
-            pet_lvl_xp = cursor.fetchone()
-            if pet_lvl_xp:
-                lvl, cur_xp = pet_lvl_xp
-                next_lvl_xp = int(100 * (lvl)**1.8)
-                
-                # Award this XP
-                new_lvl = lvl + 1
-                new_xp = 0
-                new_stage, new_form = calculate_evolution_internal(new_lvl, new_str, new_int, new_crt)
-                
-                cursor.execute("""
-                    UPDATE pet_status 
-                    SET level = ?, current_xp = ?, stage = ?, form_name = ?
-                    WHERE id = ?
-                """, (new_lvl, new_xp, new_stage, new_form, p_id))
-                stat_effect = f"Evolved to Level {new_lvl}!"
-        
-        if "Evolution Matrix" not in item_name:
-            cursor.execute("""
-                UPDATE pet_status 
-                SET strength = ?, intelligence = ?, creativity = ?, stamina = ?
-                WHERE id = ?
-            """, (new_str, new_int, new_crt, new_stam, p_id))
-            
-        conn.commit()
-        conn.close()
-        return f"🎉 Used {item_name}! ({stat_effect})"
-    
-    conn.close()
-    return "❌ Error using item!"
-
-def add_chat_msg(session_id, sender, message):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        INSERT INTO chat_history (session_id, sender, message) 
-        VALUES (?, ?, ?)
-    """, (session_id, sender, message))
-    conn.commit()
-    conn.close()
-
-def get_chat_history(session_id):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT sender, message, timestamp 
-        FROM chat_history 
-        WHERE session_id = ? 
-        ORDER BY id ASC
-    """, (session_id,))
-    history = cursor.fetchall()
-    return history
-
-def get_floki_persona():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT value FROM app_config WHERE key = 'floki_persona'")
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return row[0]
-    return "Socratic Tutor"
-
-def set_floki_persona(persona):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('floki_persona', ?)", (persona,))
-    conn.commit()
-    conn.close()
-
-def generate_quest_question(zone, pet_level):
-    # Fallback questions (if Gemini is offline or fails)
-    fallbacks = {
-        "Ruins": [
-            {"question": "What is 3/4 of 24?", "choices": ["12", "18", "16"], "answer": "18", "hint": "Multiply 24 by 3, then divide by 4."},
-            {"question": "Solve: 5x + 3 = 18. What is x?", "choices": ["3", "4", "5"], "answer": "3", "hint": "Subtract 3 from 18, then divide by 5."},
-            {"question": "Which fraction is equivalent to 0.4?", "choices": ["1/4", "2/5", "4/5"], "answer": "2/5", "hint": "Remember that 0.4 is 4 tenths, which can be simplified."},
-            {"question": "What is the value of 5 + 3 * 2?", "choices": ["16", "11", "13"], "answer": "11", "hint": "Follow the order of operations (PEMDAS): do multiplication first!"}
-        ],
-        "Canyon": [
-            {"question": "Which state of matter is water vapor?", "choices": ["Solid", "Liquid", "Gas"], "answer": "Gas", "hint": "Think about steam rising from a kettle."},
-            {"question": "How many vertices does a cube have?", "choices": ["6", "8", "12"], "answer": "8", "hint": "Count the corners of a 3D box."},
-            {"question": "What kind of simple machine is a slide on a playground?", "choices": ["Lever", "Pulley", "Inclined Plane"], "answer": "Inclined Plane", "hint": "It is a flat surface tilted at an angle."},
-            {"question": "Which of these is a primary producer in an ecosystem?", "choices": ["Grasshopper", "Green Plant", "Frog"], "answer": "Green Plant", "hint": "Producers make their own food using sunlight."}
-        ],
-        "Forge": [
-            {"question": "What is the force that pulls objects toward Earth?", "choices": ["Friction", "Gravity", "Magnetism"], "answer": "Gravity", "hint": "It is what makes an apple fall from a tree."},
-            {"question": "If a rectangle has length 8 and width 5, what is its perimeter?", "choices": ["40", "13", "26"], "answer": "26", "hint": "Add all four sides: 8 + 5 + 8 + 5."},
-            {"question": "Which gas do plants absorb from the atmosphere for photosynthesis?", "choices": ["Oxygen", "Carbon Dioxide", "Nitrogen"], "answer": "Carbon Dioxide", "hint": "It is the gas humans breathe out."},
-            {"question": "What is the freezing point of water in Celsius?", "choices": ["0 degrees", "32 degrees", "100 degrees"], "answer": "0 degrees", "hint": "Celsius is based on the properties of water: 0 is freezing, 100 is boiling."}
-        ]
-    }
-    
-    # Retrieve Gemini key safely
-    gemini_key = ""
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            gemini_key = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        pass
-    if not gemini_key:
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        
-    # Match zone key
-    zone_name = "Ruins"
-    if "Canyon" in zone:
-        zone_name = "Canyon"
-    elif "Forge" in zone:
-        zone_name = "Forge"
-        
-    import random
-    
-    if not gemini_key:
-        return random.choice(fallbacks[zone_name])
-        
-    # Call Gemini to generate a question
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3.5-flash")
-        
-        prompt = f"""
-        Generate one 5th-grade level multiple-choice quest question for a gamified learning app.
-        The question should be themed for this zone: '{zone}' and matches pet level: {pet_level}.
-        
-        Format your response ONLY as a raw JSON object (do not wrap in markdown ```json blocks) conforming to this schema:
-        {{
-          "question": "Question text",
-          "choices": ["Choice A", "Choice B", "Choice C"],
-          "answer": "The exact string of the correct choice matching one in the choices list",
-          "hint": "A gentle Socratic hint that guides the student to the answer"
-        }}
-        """
-        response = model.generate_content(prompt)
-        raw_text = response.text.strip()
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-        
-        return json.loads(raw_text)
-    except Exception:
-        return random.choice(fallbacks[zone_name])
-
-def parse_and_execute_schedule_command(user_input):
-    gemini_key = ""
-    try:
-        if "GEMINI_API_KEY" in st.secrets:
-            gemini_key = st.secrets["GEMINI_API_KEY"]
-    except Exception:
-        pass
-    if not gemini_key:
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        
-    if not gemini_key:
-        return "⚠️ **[Offline/Demo Mode]** Quick scheduler requires a `GEMINI_API_KEY` configured!"
-        
-    today_str = date.today().strftime("%Y-%m-%d")
-    tomorrow_str = (date.today() + timedelta(days=1)).strftime("%Y-%m-%d")
-    
-    system_instruction = f"""
-    You are the Flokus Academy Scheduling Assistant. Your job is to extract task scheduling operations from natural language requests.
-    Today's date is: {today_str}. Tomorrow is: {tomorrow_str}.
-    
-    You must classify the user's request and output a JSON object matching this schema:
-    {{
-      "action": "CREATE" | "DELETE",
-      "task_details": {{
-        "title": "Task Description",
-        "category": "Math (Beast Academy)" | "Language Arts (Brave Writer)" | "Science (CrunchLabs)" | "Science (Outschool)" | "Social Studies (Tuttle Twins)" | "Logic (Brilliant.org)" | "Logic (Synthesis)" | "Logic (Chess.com)" | "Logic (Critical Thinking Co.)" | "Applied STEM (Tech Tails)" | "Applied STEM (Engineering Proj)",
-        "date": "YYYY-MM-DD",
-        "xp_reward": integer,
-        "is_boss": boolean
-      }}
-    }}
-    
-    Return ONLY raw valid JSON. Do not wrap it in markdown code blocks.
-    """
-    
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3.5-flash")
-        
-        response = model.generate_content([system_instruction, f"Request: {user_input}"])
-        raw_text = response.text.strip()
-        
-        # Clean markdown code blocks if the model outputs them
-        if raw_text.startswith("```json"):
-            raw_text = raw_text[7:]
-        if raw_text.endswith("```"):
-            raw_text = raw_text[:-3]
-        raw_text = raw_text.strip()
-        
-        data = json.loads(raw_text)
-        action = data.get("action")
-        details = data.get("task_details", {})
-        
-        if action == "CREATE":
-            t_title = details.get("title", "New Task")
-            t_category = details.get("category", "Math (Beast Academy)")
-            t_date_str = details.get("date", today_str)
-            t_date = datetime.strptime(t_date_str, "%Y-%m-%d").date()
-            t_xp = details.get("xp_reward", 10)
-            t_boss = 1 if details.get("is_boss") else 0
-            
-            add_task_to_db(t_title, t_category, "", t_xp, t_date, t_boss)
-            return f"✅ **Scheduled!** Created task *'{t_title}'* under *'{t_category}'* for {t_date_str} (💎 {t_xp} XP)."
-        else:
-            return "⚠️ Action not supported yet. Currently, only CREATE actions are supported."
-    except Exception as e:
-        return f"❌ **Error parsing command:** {str(e)}"
-# --- END NEW ---
-
-def add_expense(item_name, cost, category, status):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO expenses (item_name, cost, category, status) VALUES (?, ?, ?, ?)", 
-                   (item_name, cost, category, status))
-    conn.commit()
-    conn.close()
-
-def get_all_expenses():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, item_name, cost, category, status FROM expenses")
-    expenses = cursor.fetchall()
-    conn.close()
-    return expenses
-
-def update_expense_status(expense_id, new_status):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("UPDATE expenses SET status = ? WHERE id = ?", (new_status, expense_id))
-    conn.commit()
-    conn.close()
-
-def delete_expense(expense_id):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM expenses WHERE id = ?", (expense_id,))
-    conn.commit()
-    conn.close()
-
-def add_reward(name, xp_cost, qty):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO rewards (name, xp_cost, inventory_qty) VALUES (?, ?, ?)", (name, xp_cost, qty))
-    conn.commit()
-    conn.close()
-
-def get_rewards():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT id, name, xp_cost, inventory_qty FROM rewards")
-    rewards = cursor.fetchall()
-    conn.close()
-    return rewards
-
-def update_reward_details(reward_id, new_cost, new_qty):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE rewards 
-        SET xp_cost = ?, inventory_qty = ? 
-        WHERE id = ?
-    """, (new_cost, new_qty, reward_id))
-    conn.commit()
-    conn.close()
-
-def delete_reward(reward_id):
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM rewards WHERE id = ?", (reward_id,))
-    conn.commit()
-    conn.close()
-
-def buy_reward(reward_id, reward_name, xp_cost):
-    today_string = date.today().strftime("%Y-%m-%d")
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO purchases (reward_name, xp_cost, purchase_date) VALUES (?, ?, ?)", 
-                   (reward_name, xp_cost, today_string))
-    cursor.execute("UPDATE rewards SET inventory_qty = MAX(0, inventory_qty - 1) WHERE id = ?", (reward_id,))
-    
-    # --- NEW: Route pet care items to pet inventory ---
-    pet_items = [
-        "🥩 Cyber-Protein", "💾 Memory Chip", "🖌️ Chameleon Ink", 
-        "⚡ Giga-Soda", "🔮 Omni-Treat", "🗝️ Evolution Matrix"
-    ]
-    if reward_name in pet_items:
-        cursor.execute("""
-            INSERT INTO pet_inventory (item_name, quantity) 
-            VALUES (?, 1) 
-            ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + 1
-        """, (reward_name,))
-    # --- END NEW ---
-    
-    conn.commit()
-    conn.close()
-
-def get_xp_balance():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        SELECT SUM(CASE WHEN is_boss_fight = 1 THEN xp_reward * 2 ELSE xp_reward END) 
-        FROM tasks 
-        WHERE is_completed = 1
-    """)
-    earned_tasks = cursor.fetchone()[0] or 0
-    
-    cursor.execute("SELECT SUM(xp_reward) FROM creator_projects WHERE status = 'Completed'")
-    earned_projects = cursor.fetchone()[0] or 0
-    
-    cursor.execute("SELECT SUM(xp_reward) FROM quest_completions")
-    earned_quests = cursor.fetchone()[0] or 0
-    
-    cursor.execute("SELECT SUM(xp_cost) FROM purchases")
-    spent = cursor.fetchone()[0] or 0
-    
-    conn.close()
-    return (earned_tasks + earned_projects + earned_quests) - spent
-
-def get_purchase_history():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT reward_name, xp_cost, purchase_date FROM purchases ORDER BY id DESC")
-    purchases = cursor.fetchall()
-    conn.close()
-    return purchases
-
-def get_task_completion_stats():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT category, COUNT(id) FROM tasks WHERE is_completed = 1 GROUP BY category")
-    stats = cursor.fetchall()
-    conn.close()
-    return stats
-
-def get_xp_over_time():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT task_date, SUM(CASE WHEN is_boss_fight = 1 THEN xp_reward * 2 ELSE xp_reward END) 
-        FROM tasks 
-        WHERE is_completed = 1 
-        GROUP BY task_date 
-        ORDER BY task_date ASC
-    """)
-    data = cursor.fetchall()
-    conn.close()
-    return data
-
-def get_daily_streak():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT DISTINCT task_date FROM tasks WHERE is_completed = 1 ORDER BY task_date DESC")
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
-        return 0
-        
-    completed_dates = set()
-    for row in rows:
-        try:
-            completed_dates.add(datetime.strptime(row[0], "%Y-%m-%d").date())
-        except ValueError:
-            pass
-            
-    today = date.today()
-    yesterday = today - timedelta(days=1)
-    
-    if today not in completed_dates and yesterday not in completed_dates:
-        return 0
-        
-    current_date = today if today in completed_dates else yesterday
-    streak = 0
-    
-    while current_date in completed_dates:
-        streak += 1
-        current_date -= timedelta(days=1)
-        
-    return streak
-
-def get_expense_totals_by_status():
-    conn = sqlite3.connect('flokus.db')
-    cursor = conn.cursor()
-    cursor.execute("SELECT status, SUM(cost) FROM expenses GROUP BY status")
-    rows = cursor.fetchall()
-    conn.close()
-    return dict(rows)
-
-# --- NEW: Update Data Fetcher to accept and process Date Boundaries ---
-def get_full_portfolio_data(start_dt, end_dt):
-    start_str = start_dt.strftime("%Y-%m-%d")
-    end_str = end_dt.strftime("%Y-%m-%d")
-    
-    conn = sqlite3.connect('flokus.db')
-    
-    # Filter Daily Tasks within Range
-    df_tasks = pd.read_sql_query("""
-        SELECT task_date as Date, title as Activity, category as Subject, 
-               xp_reward as XP_Earned, task_summary as Notes, 'Daily Task' as Type
-        FROM tasks
-        WHERE is_completed = 1 AND task_date >= ? AND task_date <= ?
-    """, conn, params=(start_str, end_str))
-    
-    # Filter Creator Projects within Range
-    df_projects = pd.read_sql_query("""
-        SELECT completion_date as Date, title as Activity, platform as Subject, 
-               xp_reward as XP_Earned, project_summary as Notes, 'Creator Project' as Type
-        FROM creator_projects
-        WHERE status = 'Completed' AND completion_date >= ? AND completion_date <= ?
-    """, conn, params=(start_str, end_str))
-    
-    conn.close()
-    
-    df_combined = pd.concat([df_tasks, df_projects], ignore_index=True)
-    
-    if not df_combined.empty:
-        df_combined = df_combined.sort_values(by='Date', ascending=False)
-        
-    return df_combined
-# --- END NEW ---
-
-SUBJECT_EMOJIS = {
-    "Math (Beast Academy)": "🧮",
-    "Language Arts (Brave Writer)": "✍️",
-    "Science (CrunchLabs)": "🧪",
-    "Science (Outschool)": "🏫",
-    "Social Studies (Tuttle Twins)": "🗺️",
-    "Logic (Brilliant.org)": "⚔️",
-    "Logic (Synthesis)": "🤖",
-    "Logic (Chess.com)": "♟️",
-    "Logic (Critical Thinking Co.)": "🧠",
-    "Applied STEM (Tech Tails)": "🛠️",
-    "Applied STEM (Engineering Proj)": "⚙️"
-}
-
-PLATFORM_LINKS = {
-    "Math (Beast Academy)": "https://beastacademy.com/login",
-    "Language Arts (Brave Writer)": "https://bravewriter.com/",
-    "Science (CrunchLabs)": "https://www.crunchlabs.com/",
-    "Science (Outschool)": "https://outschool.com/", 
-    "Social Studies (Tuttle Twins)": "https://tuttletwins.com/",
-    "Logic (Brilliant.org)": "https://brilliant.org/login",
-    "Logic (Synthesis)": "https://www.synthesis.com/",
-    "Logic (Chess.com)": "https://www.chess.com/login",
-    "Logic (Critical Thinking Co.)": "https://www.criticalthinking.com/",
-    "Applied STEM (Tech Tails)": "",
-    "Applied STEM (Engineering Proj)": "" 
-}
+# Configurations
+SUBJECT_EMOJIS = config.SUBJECT_EMOJIS
+PLATFORM_LINKS = config.PLATFORM_LINKS
 
 # ==========================================
 # STREAMLIT DASHBOARD UI
@@ -1136,8 +201,96 @@ st.markdown("""
         background-color: #1e1b2e !important;
         border-color: #9f7aea !important;
     }
+
+    /* Event Urgency & Calendar Styling */
+    .event-card {
+        background: linear-gradient(135deg, #161b2e 0%, #0f1220 100%);
+        border: 1px solid #283254;
+        border-radius: 10px;
+        padding: 14px 18px;
+        margin-bottom: 12px;
+    }
+    .event-card.urgent {
+        border-left: 5px solid #f56565 !important;
+        box-shadow: 0 0 10px rgba(245, 101, 101, 0.2);
+    }
+    .event-card.important {
+        border-left: 5px solid #ed8936 !important;
+        box-shadow: 0 0 10px rgba(237, 137, 54, 0.2);
+    }
+    .event-card.normal {
+        border-left: 5px solid #4299e1 !important;
+    }
+    .badge-urgent {
+        background-color: #742a2a;
+        color: #feb2b2;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .badge-important {
+        background-color: #7b341e;
+        color: #fbd38d;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .badge-normal {
+        background-color: #2a4365;
+        color: #90cdf4;
+        padding: 3px 8px;
+        border-radius: 6px;
+        font-size: 12px;
+        font-weight: 700;
+    }
+    .countdown-hero {
+        background: linear-gradient(135deg, #1e2640 0%, #11162b 100%);
+        border: 2px solid #63b3ed;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+        margin-bottom: 20px;
+        box-shadow: 0 0 20px rgba(99, 179, 237, 0.25);
+    }
+    .countdown-number {
+        font-size: 44px;
+        font-weight: 800;
+        color: #63b3ed;
+        line-height: 1.1;
+    }
 </style>
 """, unsafe_allow_html=True)
+
+def render_school_notifications_bar():
+    active_notifications = get_upcoming_event_notifications(date.today())
+    if active_notifications:
+        with st.expander(f"🔔 **Upcoming School Alerts & Notifications ({len(active_notifications)})**", expanded=True):
+            for notif in active_notifications:
+                urgency = notif['importance'].lower()
+                badge_class = f"badge-{urgency}" if urgency in ['urgent', 'important', 'normal'] else "badge-normal"
+                
+                if notif['days_left'] == 0:
+                    time_label = "🚨 **TODAY!**"
+                elif notif['days_left'] == 1:
+                    time_label = "⚠️ **TOMORROW!**"
+                else:
+                    time_label = f"⏳ In **{notif['days_left']} days** ({notif['event_date'].strftime('%b %d')})"
+                    
+                desc_html = f'<div style="margin-top: 4px; font-size: 13px; color: #cbd5e0;">📝 {notif["description"]}</div>' if notif['description'] else ''
+                time_str = f"🕒 {notif['event_time']}" if notif['event_time'] else ""
+                
+                st.markdown(f"""
+                <div class="event-card {urgency}">
+                    <span class="{badge_class}">{notif['importance'].upper()}</span> &nbsp;
+                    <span style="font-weight: 700; font-size: 16px; color: #ffffff;">{notif['title']}</span>
+                    <div style="margin-top: 6px; font-size: 14px; color: #a0aec0;">
+                        🏷️ {notif['category']} | 📅 Date: <strong>{notif['event_date'].strftime('%A, %b %d, %Y')}</strong> {time_str} | {time_label}
+                    </div>
+                    {desc_html}
+                </div>
+                """, unsafe_allow_html=True)
 
 if 'show_balloons' not in st.session_state:
     st.session_state.show_balloons = False
@@ -1148,7 +301,8 @@ user_view = st.sidebar.radio("Who is using the dashboard?", ["Sonny (Student)", 
 is_admin_authenticated = False
 if user_view == "Dad (Admin)":
     admin_pin = st.sidebar.text_input("🔑 Enter Admin Passcode:", type="password")
-    if admin_pin == "1234":
+    secure_pin = st.secrets.get("admin_pin", "1234")
+    if admin_pin == secure_pin:
         is_admin_authenticated = True
     elif admin_pin != "":
         st.sidebar.error("❌ Incorrect Passcode!")
@@ -1162,6 +316,8 @@ if user_view == "Sonny (Student)":
         st.balloons()
         st.session_state.show_balloons = False
 
+    render_school_notifications_bar()
+
     col_date, _ = st.columns([0.25, 0.75])
     with col_date:
         selected_date = st.date_input("📅 Select Date:", value=date.today())
@@ -1169,7 +325,7 @@ if user_view == "Sonny (Student)":
     day_display = selected_date.strftime("%A, %b %d")
     st.title(f"🎓 Sonny's Hub - {day_display}")
     
-    tab_quests, tab_creator, tab_store, tab_pet, tab_ai = st.tabs(["📋 Daily Quests", "🛠️ Creator Block", "🛍️ Reward Store", "🐾 Digital Pet", "💬 Ask Floki"])
+    tab_quests, tab_calendar, tab_creator, tab_store, tab_pet, tab_ai = st.tabs(["📋 Daily Quests", "📅 School Calendar", "🛠️ Creator Block", "🛍️ Reward Store", "🐾 Digital Pet", "💬 Ask Floki"])
     
     with tab_quests:
         pending_tasks = get_pending_tasks(selected_date)
@@ -1240,24 +396,50 @@ if user_view == "Sonny (Student)":
                                 st.write("") 
                                 start_timer = st.button("🚀 Start Sprint", key=f"timer_btn_{task_id}")
                             
+                            # Cache target focus time when start button is pressed
                             if start_timer:
-                                countdown_placeholder = st.empty()
-                                total_seconds = int(focus_mins * 60)
-                                
-                                while total_seconds > 0:
-                                    mins, secs = divmod(total_seconds, 60)
-                                    countdown_placeholder.metric(
-                                        label="⌛ Active Focus Window", 
-                                        value=f"{mins:02d}:{secs:02d}"
-                                    )
-                                    time.sleep(1)
-                                    total_seconds -= 1
-                                    
-                                countdown_placeholder.success("🎉 Focus Sprint Complete! You crushed it!")
-                                # --- NEW: Temporarily cache sprint runtime to carry over on check ---
                                 st.session_state[f"runtime_captured_{task_id}"] = int(focus_mins)
-                                # --- END NEW ---
-                                st.balloons()
+                                st.session_state[f"timer_started_{task_id}"] = time.time()
+                                st.session_state[f"timer_duration_{task_id}"] = int(focus_mins) * 60
+                                st.rerun()
+                                
+                            # Check and render countdown widget
+                            if f"timer_started_{task_id}" in st.session_state:
+                                start_time = st.session_state[f"timer_started_{task_id}"]
+                                duration = st.session_state[f"timer_duration_{task_id}"]
+                                elapsed = time.time() - start_time
+                                remaining = max(0, int(duration - elapsed))
+                                
+                                if remaining > 0:
+                                    import streamlit.components.v1 as components
+                                    timer_html = f"""
+                                    <div style="background-color: #1a2238; border: 1px solid #63b3ed; border-radius: 8px; padding: 15px; text-align: center; font-family: 'Outfit', sans-serif;">
+                                        <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #8c9bb4; margin-bottom: 5px;">⌛ Active Focus Window</div>
+                                        <div id="countdown-val" style="font-size: 32px; font-weight: bold; color: #63b3ed;">00:00</div>
+                                    </div>
+                                    <script>
+                                        let seconds = {remaining};
+                                        function updateTimer() {{
+                                            let mins = Math.floor(seconds / 60);
+                                            let secs = seconds % 60;
+                                            document.getElementById('countdown-val').innerText = 
+                                                `${{mins.toString().padStart(2, '0')}}:${{secs.toString().padStart(2, '0')}}`;
+                                            if (seconds <= 0) {{
+                                                document.getElementById('countdown-val').innerText = "🎉 Focus Sprint Complete! You crushed it!";
+                                                document.getElementById('countdown-val').style.color = "#22c55e";
+                                            }} else {{
+                                                seconds--;
+                                                setTimeout(updateTimer, 1000);
+                                            }}
+                                        }}
+                                        updateTimer();
+                                    </script>
+                                    """
+                                    components.html(timer_html, height=100)
+                                    if st.button("🔄 Sync/Refresh Timer", key=f"timer_refresh_{task_id}"):
+                                        st.rerun()
+                                else:
+                                    st.success("🎉 Focus Sprint Complete! You crushed it!")
                         
                         note_input = st.text_input(
                             "✏️ What did you learn or read? (Add a summary note here before checking complete)",
@@ -1296,8 +478,198 @@ if user_view == "Sonny (Student)":
                         if is_boss == 1:
                             st.markdown('<div class="boss-fight-marker"></div>', unsafe_allow_html=True)
                             st.success(f"👑 **{emoji} {task_category}**: {task_title} (💎 {task_xp * 2} XP Earned!)")
+    with tab_calendar:
+        st.subheader("📅 School Calendar & Upcoming Academic Events")
+        
+        # --- Hero Countdown Box ---
+        next_event = get_next_major_school_event(date.today())
+        if next_event:
+            d_left = next_event['days_left']
+            if d_left > 0:
+                cd_subtitle = f"Countdown to **{next_event['title']}** ({next_event['event_date'].strftime('%b %d, %Y')})"
+                cd_number = f"⏳ {d_left} Days Away"
+            elif d_left == 0:
+                cd_subtitle = f"🎉 TODAY IS THE DAY!"
+                cd_number = f"🚨 {next_event['title']}"
+            else:
+                cd_subtitle = "School Semester in Progress"
+                cd_number = "Academic Year 2026-2027"
+                
+            time_str = f"🕒 {next_event['event_time']}" if next_event['event_time'] else ""
+            desc_html = f'<div style="margin-top: 6px; font-size: 13px; color: #cbd5e0;">📝 {next_event["description"]}</div>' if next_event['description'] else ''
+            
+            st.markdown(f"""
+            <div class="countdown-hero">
+                <div style="font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: #a0aec0; margin-bottom: 5px;">
+                    {cd_subtitle}
+                </div>
+                <div class="countdown-number">{cd_number}</div>
+                <div style="font-size: 14px; color: #e2e8f0; margin-top: 8px;">
+                    🏷️ Category: <strong>{next_event['category']}</strong> | Importance: <strong>{next_event['importance']}</strong> {time_str}
+                </div>
+                {desc_html}
+            </div>
+            """, unsafe_allow_html=True)
+
+        # Calendar View Subtabs
+        cal_sub1, cal_sub2 = st.tabs(["🗓️ Interactive Month View", "📋 Upcoming Events List"])
+        
+        with cal_sub1:
+            col_m1, col_m2 = st.columns([0.4, 0.6])
+            with col_m1:
+                selected_month_year = st.date_input("Select Month/Year to View", value=date(2026, 8, 1), key="sonny_cal_month_picker")
+            
+            view_year = selected_month_year.year
+            view_month = selected_month_year.month
+            
+            import calendar
+            _, num_days = calendar.monthrange(view_year, view_month)
+            month_start = date(view_year, view_month, 1)
+            month_end = date(view_year, view_month, num_days)
+            
+            events_in_month = get_school_events(start_date=month_start, end_date=month_end)
+            
+            st.markdown(f"### 🗓️ {month_start.strftime('%B %Y')} Calendar")
+            
+            events_by_day = {}
+            for ev in events_in_month:
+                ev_id, ev_title, ev_date_str, ev_time, ev_cat, ev_imp, ev_rem, ev_desc, _ = ev
+                try:
+                    d_obj = datetime.strptime(ev_date_str, "%Y-%m-%d").date()
+                    day_num = d_obj.day
+                    if day_num not in events_by_day:
+                        events_by_day[day_num] = []
+                    events_by_day[day_num].append({
+                        "title": ev_title,
+                        "time": ev_time,
+                        "category": ev_cat,
+                        "importance": ev_imp,
+                        "desc": ev_desc
+                    })
+                except Exception:
+                    pass
+
+            days_header = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+            cols_head = st.columns(7)
+            for idx, hname in enumerate(days_header):
+                cols_head[idx].markdown(
+                    f"<div style='text-align:center; font-weight:700; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:#63b3ed; background:#161c2e; padding:6px 0; border-radius:6px; border:1px solid #283254; margin-bottom:4px;'>{hname}</div>",
+                    unsafe_allow_html=True
+                )
+                
+            first_weekday = (month_start.weekday() + 1) % 7
+            
+            day_counter = 1
+            row_cols = st.columns(7)
+            
+            for cell_idx in range(first_weekday):
+                row_cols[cell_idx].markdown(
+                    "<div style='background:rgba(18, 22, 38, 0.3); border:1px dashed rgba(40, 50, 84, 0.4); border-radius:8px; min-height:90px; margin-bottom:6px;'></div>",
+                    unsafe_allow_html=True
+                )
+                
+            current_cell = first_weekday
+            
+            while day_counter <= num_days:
+                cell_col = row_cols[current_cell]
+                c_date = date(view_year, view_month, day_counter)
+                is_today = (c_date == date.today())
+                
+                day_border = "2px solid #6366f1" if is_today else "1px solid #283254"
+                day_bg = "linear-gradient(135deg, rgba(99, 102, 241, 0.15) 0%, rgba(18, 22, 38, 0.95) 100%)" if is_today else "#121626"
+                num_color = "#818cf8" if is_today else "#e2e8f0"
+                today_badge = "<span style='font-size:9px; background:#4f46e5; color:#ffffff; padding:1px 5px; border-radius:4px; font-weight:600;'>TODAY</span>" if is_today else ""
+                
+                events_html = ""
+                if day_counter in events_by_day:
+                    for item in events_by_day[day_counter]:
+                        imp = item.get('importance', 'Normal')
+                        if imp == 'Urgent':
+                            imp_color = "#ef4444"
+                            badge_bg = "rgba(239, 68, 68, 0.18)"
+                        elif imp == 'Important':
+                            imp_color = "#f59e0b"
+                            badge_bg = "rgba(245, 158, 11, 0.18)"
                         else:
-                            st.success(f"**{emoji} {task_category}**: {task_title} (💎 {task_xp} XP)")
+                            imp_color = "#3b82f6"
+                            badge_bg = "rgba(59, 130, 246, 0.18)"
+                            
+                        title_escaped = html.escape(item['title'])
+                        desc_escaped = html.escape(item.get('desc', ''))
+                        tooltip = f"{title_escaped} - {desc_escaped}" if desc_escaped else title_escaped
+                        
+                        time_html = f"<div style='font-size:9px; color:#a0aec0; font-weight:600;'>⏱️ {html.escape(item['time'])}</div>" if item.get('time') else ""
+                        
+                        events_html += (
+                            f"<div style='background:{badge_bg}; border-left:3px solid {imp_color}; border-radius:5px; padding:4px 6px; margin-top:4px; font-size:11px; line-height:1.2; color:#ffffff;' title='{tooltip}'>"
+                            f"{time_html}"
+                            f"<div style='font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;'>{title_escaped}</div>"
+                            f"</div>"
+                        )
+                        
+                cell_html = (
+                    f"<div style='background:{day_bg}; border:{day_border}; border-radius:8px; padding:6px 8px; min-height:90px; margin-bottom:6px;'>"
+                    f"<div style='font-weight:700; font-size:13px; color:{num_color}; display:flex; align-items:center; justify-content:space-between;'>"
+                    f"<span>{day_counter}</span>{today_badge}"
+                    f"</div>"
+                    f"{events_html}"
+                    f"</div>"
+                )
+                
+                cell_col.markdown(cell_html, unsafe_allow_html=True)
+                
+                day_counter += 1
+                current_cell += 1
+                if current_cell == 7 and day_counter <= num_days:
+                    current_cell = 0
+                    row_cols = st.columns(7)
+                    
+            if current_cell != 0:
+                for fill_idx in range(current_cell, 7):
+                    row_cols[fill_idx].markdown(
+                        "<div style='background:rgba(18, 22, 38, 0.3); border:1px dashed rgba(40, 50, 84, 0.4); border-radius:8px; min-height:90px; margin-bottom:6px;'></div>",
+                        unsafe_allow_html=True
+                    )
+                    
+        with cal_sub2:
+            st.markdown("### 📋 All Scheduled School Events")
+            cat_options = ["All Categories", "🎓 School Start / Term", "🎥 Live Class (Outschool)", "🛠️ Kit Delivery / Project", "🏛️ Field Trip", "💰 UFA Milestone", "📝 Exam / Assessment", "📌 General"]
+            selected_cat_filter = st.selectbox("Filter by Category", cat_options, key="sonny_event_cat_filter")
+            
+            all_events = get_school_events(category_filter=selected_cat_filter)
+            if not all_events:
+                st.info("No events found matching this filter.")
+            else:
+                for ev in all_events:
+                    ev_id, ev_title, ev_date_str, ev_time, ev_cat, ev_imp, ev_rem, ev_desc, _ = ev
+                    ev_date_obj = datetime.strptime(ev_date_str, "%Y-%m-%d").date()
+                    d_left = (ev_date_obj - date.today()).days
+                    
+                    urgency_class = ev_imp.lower()
+                    badge_style = f"badge-{urgency_class}" if urgency_class in ['urgent', 'important', 'normal'] else "badge-normal"
+                    
+                    if d_left == 0:
+                        status_str = "🚨 **TODAY!**"
+                    elif d_left > 0:
+                        status_str = f"⏳ **{d_left} days away**"
+                    else:
+                        status_str = "✅ **Completed / Past**"
+                        
+                    time_str = f"🕒 {ev_time}" if ev_time else ""
+                    desc_html = f'<div style="margin-top:4px; font-size:13px; color:#cbd5e0;">📝 {ev_desc}</div>' if ev_desc else ''
+                    
+                    st.markdown(f"""
+                    <div class="event-card {urgency_class}">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span style="font-weight:700; font-size:16px; color:#ffffff;">{ev_title}</span>
+                            <span class="{badge_style}">{ev_imp.upper()}</span>
+                        </div>
+                        <div style="margin-top:6px; font-size:14px; color:#a0aec0;">
+                            🏷️ Category: <strong>{ev_cat}</strong> | 📅 Date: <strong>{ev_date_obj.strftime('%A, %b %d, %Y')}</strong> {time_str} | {status_str}
+                        </div>
+                        {desc_html}
+                    </div>
+                    """, unsafe_allow_html=True)
 
     with tab_creator:
         st.subheader("🛠️ Active Creator Projects")
@@ -1337,7 +709,9 @@ if user_view == "Sonny (Student)":
                         saved_path = ""
                         if uploaded_file is not None:
                             os.makedirs("uploads", exist_ok=True)
-                            safe_filename = f"{int(time.time())}_{uploaded_file.name}"
+                            base_fn = os.path.basename(uploaded_file.name)
+                            sanitized_fn = "".join(c for c in base_fn if c.isalnum() or c in "._- ")
+                            safe_filename = f"{int(time.time())}_{sanitized_fn}"
                             saved_path = os.path.join("uploads", safe_filename)
                             with open(saved_path, "wb") as f:
                                 f.write(uploaded_file.getbuffer())
@@ -1469,11 +843,7 @@ if user_view == "Sonny (Student)":
             # --- FEED / CARE SECTION ---
             st.markdown("### 🎒 Pet Care & Feed")
             
-            conn = sqlite3.connect('flokus.db')
-            cursor = conn.cursor()
-            cursor.execute("SELECT item_name, quantity FROM pet_inventory WHERE quantity > 0")
-            pet_inv = cursor.fetchall()
-            conn.close()
+            pet_inv = get_pet_inventory()
             
             if not pet_inv:
                 st.info("Your pet inventory is empty. Buy care items (like Cyber-Protein or Memory Chips) from the XP Store!")
@@ -1520,11 +890,7 @@ if user_view == "Sonny (Student)":
                             st.error("Not enough Stamina! Restore stamina by maintaining a task streak or buying Giga-Soda!")
                         else:
                             # Deduct stamina
-                            conn = sqlite3.connect('flokus.db')
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE pet_status SET stamina = MAX(0, stamina - 2) WHERE id = ?", (pet_id,))
-                            conn.commit()
-                            conn.close()
+                            deduct_pet_stamina(pet_id, 2)
                             
                             # Initialize Quest map crawler state
                             st.session_state.active_quest = {
@@ -1634,65 +1000,7 @@ if user_view == "Sonny (Student)":
                             # CORRECT ANSWER
                             st.session_state.quest_hint = None
                             
-                            conn = sqlite3.connect('flokus.db')
-                            cursor = conn.cursor()
-                            
-                            is_boss = (active_room == 3)
-                            xp_gain = 50 if is_boss else 20
-                            
-                            # Award XP to pet
-                            new_xp = pet_xp + xp_gain
-                            next_lvl_xp = int(100 * (pet_level)**1.8)
-                            new_lvl = pet_level
-                            new_stage = stage
-                            new_form = form_name
-                            
-                            if new_xp >= next_lvl_xp:
-                                new_lvl += 1
-                                new_xp = max(0, new_xp - next_lvl_xp)
-                                new_stage, new_form = calculate_evolution_internal(new_lvl, strength, intelligence, creativity)
-                                
-                            stat_gain_str = ""
-                            if is_boss:
-                                # Increase all stats by 2
-                                cursor.execute("""
-                                    UPDATE pet_status 
-                                    SET level = ?, current_xp = ?, stage = ?, form_name = ?,
-                                        strength = strength + 2, intelligence = intelligence + 2, creativity = creativity + 2
-                                    WHERE id = ?
-                                """, (new_lvl, new_xp, new_stage, new_form, pet_id))
-                                stat_gain_str = " +2 to all stats!"
-                                
-                                # Add bonus random item
-                                import random
-                                bonus_items = ["🥩 Cyber-Protein", "💾 Memory Chip", "⚡ Giga-Soda", "🔮 Omni-Treat"]
-                                won_item = random.choice(bonus_items)
-                                cursor.execute("""
-                                    INSERT INTO pet_inventory (item_name, quantity) 
-                                    VALUES (?, 1) 
-                                    ON CONFLICT(item_name) DO UPDATE SET quantity = quantity + 1
-                                """, (won_item,))
-                                stat_gain_str += f" Also found 1x {won_item}!"
-                            else:
-                                # Increase active zone stat by 1
-                                stat_to_up = "intelligence" if "INT" in quest["zone"] else ("creativity" if "CRT" in quest["zone"] else "strength")
-                                cursor.execute(f"""
-                                    UPDATE pet_status 
-                                    SET level = ?, current_xp = ?, stage = ?, form_name = ?,
-                                        {stat_to_up} = {stat_to_up} + 1
-                                    WHERE id = ?
-                                """, (new_lvl, new_xp, new_stage, new_form, pet_id))
-                                stat_gain_str = f" +1 {stat_to_up.upper()}!"
-                                
-                            # Record quest completion for Sonny's student XP balance
-                            today_str = date.today().strftime("%Y-%m-%d")
-                            cursor.execute("""
-                                INSERT INTO quest_completions (zone, room, xp_reward, completion_date)
-                                VALUES (?, ?, ?, ?)
-                            """, (quest["zone"], active_room, xp_gain, today_str))
-                                
-                            conn.commit()
-                            conn.close()
+                            stat_gain_str, xp_gain = complete_quest_room(pet_id, active_room, quest["zone"])
                             
                             # Advance Quest Map state
                             quest["room_states"][active_room] = "Cleared"
@@ -1709,14 +1017,7 @@ if user_view == "Sonny (Student)":
                                     st.rerun()
                         else:
                             # INCORRECT ANSWER
-                            conn = sqlite3.connect('flokus.db')
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE pet_status SET stamina = MAX(0, stamina - 1) WHERE id = ?", (pet_id,))
-                            conn.commit()
-                            
-                            cursor.execute("SELECT stamina FROM pet_status WHERE id = ?", (pet_id,))
-                            new_stam = cursor.fetchone()[0]
-                            conn.close()
+                            new_stam = fail_quest_room(pet_id)
                             
                             if new_stam <= 0:
                                 st.session_state.active_quest = None
@@ -1785,73 +1086,12 @@ if user_view == "Sonny (Student)":
             add_chat_msg(session_id, "Sonny", user_input)
             
             # 2. Call Gemini
-            # 2. Call Gemini with active persona
+            # 2. Call Gemini
             active_persona = get_floki_persona()
-            base_prompt = "You are Floki, the friendly, patient, and enthusiastic AI Tutor for Flokus Academy. Your student is Sonny, a bright 5th grader.\n\n"
-            
-            if active_persona == "Norse Boatbuilder":
-                persona_guidelines = """
-                Role/Persona: You are Floki, the eccentric and brilliant Viking boatbuilder. Speak with a colorful, nautical, and craftsman vocabulary (use words like 'keel', 'timber', 'adzes', 'waves', 'Odin', 'thor', 'valhalla'). Speak with passion and slightly dramatic gestures written as *actions* (e.g. *giggles and shapes ash wood*, *looks up to the sky*).
-                Guidelines:
-                1. Socratic method: NEVER give answers directly. Guide Sonny through math or science problems as if you are showing him how to lay planks on a longship.
-                2. Fun Norse analogies: Explain logic as steering through rough seas, math as calculating weight distribution of rowers, and science as building strong hulls.
-                3. Keep all interactions safe, child-friendly, and educational.
-                """
-            elif active_persona == "Space Robot":
-                persona_guidelines = """
-                Role/Persona: You are FL0K1, a helpful, enthusiastic, and high-tech robotic tutor from the year 3026. Speak with friendly robotic sound effects (e.g. *beep boop*, *whirrr*, *processing*) and futuristic terminology (e.g. 'galactic', 'cybernetics', 'matrix', 'nano-chips').
-                Guidelines:
-                1. Socratic method: NEVER output direct answers. Ask Sonny leading questions to debug his logic matrix.
-                2. Robo-analogies: Explain math as coding algorithms, science as energy cell dynamics, and projects as structural engineering blueprints.
-                3. Keep all interactions safe, child-friendly, and educational.
-                """
-            else: # Socratic Tutor
-                persona_guidelines = """
-                Guidelines for your interaction:
-                1. Tone: Always speak in a gentle, warm, encouraging, and patient tone. Use child-friendly vocabulary. Add fun emojis (🚀, 🧠, 🌟, 🧩, 🦕) to keep it engaging.
-                2. Socratic Method: NEVER give Sonny the answers directly. Instead, ask guided, leading questions that help him think through the problem and discover the answer himself.
-                3. Step-by-Step Breakdown: Break complex ideas down into small, digestible chunks. Wait for Sonny to respond before moving to the next step.
-                4. Positive Reinforcement: Praise effort, creativity, and resilience. For example: "Excellent try!", "You're getting so close!", "I love how you thought about that!".
-                5. Safety: Keep all discussions safe, educational, and positive. If Sonny gets off track or asks about sensitive topics, gently guide him back to learning.
-                """
-                
-            system_instruction = base_prompt + persona_guidelines
-            
-            # Fetch full conversation history from DB for LLM context
             full_history = get_chat_history(session_id)
-            messages_context = []
-            for sender, msg, _ in full_history:
-                messages_context.append({
-                    "role": "user" if sender == "Sonny" else "model",
-                    "content": msg
-                })
-                
-            if not gemini_key:
-                floki_reply = "🤖 **[Offline/Demo Mode]** Hi Sonny! I am Floki. To activate me, please ask Dad to add a `GEMINI_API_KEY` to the Streamlit secrets! In the meantime, keep up the amazing learning! 🌟"
-            else:
-                with st.spinner("Floki is thinking..."):
-                    try:
-                        import google.generativeai as genai
-                        genai.configure(api_key=gemini_key)
-                        model = genai.GenerativeModel(
-                            model_name="gemini-3.5-flash",
-                            system_instruction=system_instruction
-                        )
-                        # Translate context to Gemini API format (ensuring alternating user/model sequence)
-                        contents = []
-                        for msg in messages_context:
-                            role = "user" if msg["role"] == "user" else "model"
-                            # If the list is empty or the last message has a different role, add a new turn
-                            if not contents or contents[-1]["role"] != role:
-                                contents.append({"role": role, "parts": [msg["content"]]})
-                            else:
-                                # Otherwise, append this text block to the previous turn of the same role
-                                contents[-1]["parts"].append(msg["content"])
-                            
-                        response = model.generate_content(contents)
-                        floki_reply = response.text
-                    except Exception as e:
-                        floki_reply = f"❌ **Error calling Gemini API:** {str(e)}"
+            
+            with st.spinner("Floki is thinking..."):
+                floki_reply = ai_tutor.generate_chat_response(full_history, active_persona)
                         
             # 3. Add assistant message to UI
             with st.chat_message("assistant"):
@@ -1890,10 +1130,11 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
     )
     # --- END NEW ---
 
+    render_school_notifications_bar()
     st.write("Welcome to the control center.")
     st.divider()
     
-    tab1, tab_proj, tab2, tab3, tab4, tab5, tab_safety = st.tabs(["📝 Add Tasks", "🛠️ Creator Projects", "🗂️ Portfolio", "💰 UFA Finances", "🎁 XP Store", "📊 Analytics", "🤖 AI Safety & Settings"])
+    tab1, tab_cal, tab_proj, tab2, tab3, tab4, tab5, tab_safety = st.tabs(["📝 Add Tasks", "📅 Event Calendar", "🛠️ Creator Projects", "🗂️ Portfolio", "💰 UFA Finances", "🎁 XP Store", "📊 Analytics", "🤖 AI Safety & Settings"])
     
     with tab1:
         st.subheader("Add a New Task for Sonny")
@@ -1990,6 +1231,119 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
                             st.success("Task deleted!")
                             st.rerun()
                 
+    with tab_cal:
+        st.subheader("📅 School Event & Academic Calendar Manager")
+        st.write("Schedule upcoming school start dates, live online classes, kit delivery dates, field trips, and UFA compliance milestones.")
+        
+        with st.form("new_school_event_form"):
+            col_e1, col_e2 = st.columns([0.6, 0.4])
+            with col_e1:
+                ev_title_in = st.text_input("Event Title (e.g. 'First Day of School', 'Science Fair Prep')")
+            with col_e2:
+                ev_category_in = st.selectbox("Category", [
+                    "🎓 School Start / Term",
+                    "🎥 Live Class (Outschool)",
+                    "🛠️ Kit Delivery / Project",
+                    "🏛️ Field Trip",
+                    "💰 UFA Milestone",
+                    "📝 Exam / Assessment",
+                    "📌 General"
+                ])
+                
+            col_e3, col_e4, col_e5 = st.columns([0.35, 0.35, 0.3])
+            with col_e3:
+                ev_date_in = st.date_input("Event Date", value=date.today())
+            with col_e4:
+                ev_time_in = st.text_input("Optional Time (e.g. '08:30 AM')", value="")
+            with col_e5:
+                ev_importance_in = st.selectbox("Importance / Priority", ["Normal", "Important", "Urgent"], index=0)
+                
+            col_e6, col_e7 = st.columns([0.3, 0.7])
+            with col_e6:
+                ev_reminder_in = st.selectbox("Notification Lead Time", [
+                    (0, "Day of Event (0 days)"),
+                    (1, "1 Day Before"),
+                    (2, "2 Days Before"),
+                    (3, "3 Days Before"),
+                    (5, "5 Days Before"),
+                    (7, "1 Week Before"),
+                    (14, "2 Weeks Before")
+                ], format_func=lambda x: x[1], index=3)[0]
+            with col_e7:
+                ev_desc_in = st.text_input("Description / Notes (Optional)", value="")
+                
+            submitted_event = st.form_submit_button("➕ Schedule Event")
+            if submitted_event:
+                if ev_title_in.strip() == "":
+                    st.error("⚠️ Event Title cannot be empty!")
+                else:
+                    add_school_event(
+                        title=ev_title_in.strip(),
+                        event_date=ev_date_in,
+                        event_time=ev_time_in.strip(),
+                        category=ev_category_in,
+                        importance=ev_importance_in,
+                        reminder_days=ev_reminder_in,
+                        description=ev_desc_in.strip()
+                    )
+                    st.success(f"Event '{ev_title_in}' scheduled for {ev_date_in.strftime('%b %d, %Y')}!")
+                    st.rerun()
+
+        st.divider()
+        st.subheader("📋 Manage Scheduled Events")
+        
+        all_dad_events = get_school_events()
+        if not all_dad_events:
+            st.info("No school events currently scheduled.")
+        else:
+            for ev in all_dad_events:
+                ev_id, ev_title, ev_date_str, ev_time, ev_cat, ev_imp, ev_rem, ev_desc, _ = ev
+                ev_date_obj = datetime.strptime(ev_date_str, "%Y-%m-%d").date()
+                
+                col_ev1, col_ev2, col_ev3 = st.columns([0.65, 0.18, 0.17])
+                with col_ev1:
+                    imp_badge = "🔴 Urgent" if ev_imp == "Urgent" else ("🟠 Important" if ev_imp == "Important" else "🔵 Normal")
+                    time_info = f" at {ev_time}" if ev_time else ""
+                    st.markdown(f"**{ev_title}** ({ev_cat}) - {imp_badge}  \n*Date: {ev_date_obj.strftime('%b %d, %Y')}{time_info} (Alert {ev_rem} days before)*")
+                    if ev_desc:
+                        st.caption(f"📝 {ev_desc}")
+                        
+                with col_ev2:
+                    with st.popover("✏️ Edit"):
+                        e_title = st.text_input("Title", value=ev_title, key=f"edit_ev_title_{ev_id}")
+                        cat_opts = [
+                            "🎓 School Start / Term",
+                            "🎥 Live Class (Outschool)",
+                            "🛠️ Kit Delivery / Project",
+                            "🏛️ Field Trip",
+                            "💰 UFA Milestone",
+                            "📝 Exam / Assessment",
+                            "📌 General"
+                        ]
+                        e_cat = st.selectbox("Category", cat_opts, index=cat_opts.index(ev_cat) if ev_cat in cat_opts else 0, key=f"edit_ev_cat_{ev_id}")
+                        e_date = st.date_input("Date", value=ev_date_obj, key=f"edit_ev_date_{ev_id}")
+                        e_time = st.text_input("Time", value=ev_time or "", key=f"edit_ev_time_{ev_id}")
+                        imp_opts = ["Normal", "Important", "Urgent"]
+                        e_imp = st.selectbox("Importance", imp_opts, index=imp_opts.index(ev_imp) if ev_imp in imp_opts else 0, key=f"edit_ev_imp_{ev_id}")
+                        e_rem = st.number_input("Reminder Lead Days", min_value=0, max_value=30, value=int(ev_rem), step=1, key=f"edit_ev_rem_{ev_id}")
+                        e_desc = st.text_area("Description", value=ev_desc or "", key=f"edit_ev_desc_{ev_id}")
+                        
+                        if st.button("Save Changes", key=f"save_ev_btn_{ev_id}"):
+                            if e_title.strip() == "":
+                                st.error("Title cannot be empty!")
+                            else:
+                                update_school_event(ev_id, e_title.strip(), e_date, e_time.strip(), e_cat, e_imp, e_rem, e_desc.strip())
+                                st.success("Event updated!")
+                                st.rerun()
+                                
+                with col_ev3:
+                    with st.popover("❌ Delete"):
+                        st.write("Delete this school event?")
+                        if st.button("Confirm Delete", key=f"del_ev_btn_{ev_id}"):
+                            delete_school_event(ev_id)
+                            st.success("Event deleted!")
+                            st.rerun()
+
     with tab_proj:
         st.subheader("Launch a New Creator Block Project")
         st.write("Deploy physical kits (like CrunchLabs or Build Box) here. These projects stay active on Sonny's dashboard until he officially marks them as fully built, granting him a massive XP bounty.")
@@ -2011,11 +1365,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
         st.divider()
         st.subheader("🛠️ Manage Creator Projects")
         
-        conn = sqlite3.connect('flokus.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, title, platform, xp_reward, status, completion_date, project_summary, project_attachment FROM creator_projects ORDER BY id DESC")
-        all_projs = cursor.fetchall()
-        conn.close()
+        all_projs = get_all_creator_projects()
         
         if not all_projs:
             st.info("No creator projects found.")
@@ -2365,11 +1715,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
         st.subheader("🎟️ Claimed & Pending Rewards Log")
         st.caption("Approve and track Sonny's real-world reward claims.")
         
-        conn = sqlite3.connect('flokus.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, reward_name, xp_cost, purchase_date, is_claimed FROM purchases ORDER BY id DESC")
-        purchases_list = cursor.fetchall()
-        conn.close()
+        purchases_list = get_all_purchases()
         
         if len(purchases_list) == 0:
             st.info("Sonny hasn't purchased any rewards yet.")
@@ -2388,11 +1734,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
                 with col_p3:
                     if is_claimed == 0:
                         if st.button("Mark Claimed", key=f"claim_btn_{p_id}", use_container_width=True):
-                            conn = sqlite3.connect('flokus.db')
-                            cursor = conn.cursor()
-                            cursor.execute("UPDATE purchases SET is_claimed = 1 WHERE id = ?", (p_id,))
-                            conn.commit()
-                            conn.close()
+                            mark_purchase_claimed(p_id)
                             st.success(f"Approved claim: {r_name}!")
                             st.rerun()
 
@@ -2407,11 +1749,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
         today_dt = date.today()
         day_cols = st.columns(7)
         
-        conn = sqlite3.connect('flokus.db')
-        cursor = conn.cursor()
-        cursor.execute("SELECT DISTINCT task_date FROM tasks WHERE is_completed = 1")
-        active_dates = {row[0] for row in cursor.fetchall()}
-        conn.close()
+        active_dates = get_active_task_dates()
         
         for i in range(7):
             check_date = today_dt - timedelta(days=6-i)
@@ -2438,14 +1776,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
             df_t = pd.DataFrame(stats_tasks, columns=["Subject", "Completed"]) if stats_tasks else pd.DataFrame(columns=["Subject", "Completed"])
             
             # Extract completions from physical creator block builds
-            conn = sqlite3.connect('flokus.db')
-            df_p = pd.read_sql_query("""
-                SELECT platform as Subject, COUNT(id) as Completed 
-                FROM creator_projects 
-                WHERE status = 'Completed' 
-                GROUP BY platform
-            """, conn)
-            conn.close()
+            df_p = get_completed_projects_by_platform()
             
             # Merge both sources into a unified metrics array
             df_all_stats = pd.concat([df_t, df_p], ignore_index=True)
@@ -2467,25 +1798,10 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
             df_master_analytics = pd.DataFrame(list(spine_map.items()), columns=["Subject", "Completed Milestones"])
             df_master_analytics = df_master_analytics.set_index("Subject")
             
-            # --- NEW: Gather and compute focus time KPI telemetry ---
-            conn = sqlite3.connect('flokus.db')
-            cursor = conn.cursor()
-            cursor.execute("SELECT SUM(focus_minutes) FROM tasks WHERE is_completed = 1")
-            total_focus_mins = cursor.fetchone()[0] or 0
-            conn.close()
+            total_focus_mins = get_total_focus_minutes()
             
             # --- NEW: Calculate Autonomy vs. Rollover Telemetry Metrics ---
-            conn = sqlite3.connect('flokus.db')
-            cursor = conn.cursor()
-            
-            # Fetch count of all completed tasks
-            cursor.execute("SELECT COUNT(id) FROM tasks WHERE is_completed = 1")
-            total_done_tasks = cursor.fetchone()[0] or 0
-            
-            # Fetch count of tasks completed exactly on or before their target scheduled date
-            cursor.execute("SELECT COUNT(id) FROM tasks WHERE is_completed = 1 AND actual_completion_date <= task_date")
-            on_time_tasks = cursor.fetchone()[0] or 0
-            conn.close()
+            total_done_tasks, on_time_tasks = get_autonomy_metrics()
             
             # Compute operational percentage rating
             autonomy_score = int((on_time_tasks / total_done_tasks) * 100) if total_done_tasks > 0 else 100
@@ -2605,11 +1921,7 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
             
             # Button to clear chat history
             if st.button("🧹 Clear Chat History", key="clear_chat_history_btn"):
-                conn = sqlite3.connect('flokus.db')
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM chat_history WHERE session_id = ?", (session_id,))
-                conn.commit()
-                conn.close()
+                clear_chat_history(session_id)
                 st.success("Chat history cleared!")
                 st.rerun()
                 
@@ -2629,26 +1941,37 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
             st.rerun()
         # --- END NEW ---
 
-        # --- NEW: One-Click Database Backups ---
+        # --- NEW: One-Click Database Backups & Reset ---
         st.divider()
-        st.markdown("### 📦 Database Management & Backups")
-        st.caption("Keep your academic data safe. Back up your Flokus Academy database locally.")
-        try:
-            with open("flokus.db", "rb") as f:
-                db_bytes = f.read()
-        except Exception:
-            db_bytes = b""
-            
-        if db_bytes:
-            st.download_button(
-                label="📥 Download flokus.db Backup",
-                data=db_bytes,
-                file_name=f"flokus_backup_{date.today().strftime('%Y_%m_%d')}.db",
-                mime="application/x-sqlite3",
-                use_container_width=True
-            )
-        else:
-            st.error("Failed to read database file for backup.")
+        st.markdown("### 📦 Database Management & Go-Live Prep")
+        st.caption("Manage database backups or clear test data before launching.")
+        
+        db_col1, db_col2 = st.columns(2)
+        with db_col1:
+            try:
+                with open("flokus.db", "rb") as f:
+                    db_bytes = f.read()
+            except Exception:
+                db_bytes = b""
+                
+            if db_bytes:
+                st.download_button(
+                    label="📥 Backup flokus.db",
+                    data=db_bytes,
+                    file_name=f"flokus_backup_{date.today().strftime('%Y_%m_%d')}.db",
+                    mime="application/x-sqlite3",
+                    use_container_width=True
+                )
+            else:
+                st.error("Failed to read database file.")
+                
+        with db_col2:
+            with st.popover("🧹 Clear Test Data & Go Live", use_container_width=True):
+                st.warning("⚠️ **Warning:** This will permanently erase test tasks, test creator builds, purchase logs, chat history, and reset Sparky & UFA expenses back to baseline defaults!")
+                if st.button("🔴 Confirm Reset All Data", key="confirm_reset_all_data_btn", use_container_width=True):
+                    database.reset_all_test_data()
+                    st.success("🎉 Database reset complete! App is ready for live use.")
+                    st.rerun()
         # --- END NEW ---
                 
         st.divider()
@@ -2675,14 +1998,6 @@ elif user_view == "Dad (Admin)" and is_admin_authenticated:
                 new_form_name = st.text_input("Override Form Name", value=form_name)
                 
                 if st.form_submit_button("Save Override Changes"):
-                    conn = sqlite3.connect('flokus.db')
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        UPDATE pet_status 
-                        SET pet_name = ?, level = ?, current_xp = ?, strength = ?, intelligence = ?, creativity = ?, stamina = ?, max_stamina = ?, stage = ?, form_name = ?
-                        WHERE id = ?
-                    """, (new_name, new_level, new_xp, new_str, new_int, new_crt, new_stamina, new_max_stamina, new_stage, new_form_name, pet_id))
-                    conn.commit()
-                    conn.close()
+                    override_pet_status(pet_id, new_name, new_level, new_xp, new_str, new_int, new_crt, new_stamina, new_max_stamina, new_stage, new_form_name)
                     st.success("Pet overridden successfully!")
                     st.rerun()
