@@ -1,6 +1,27 @@
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+flokus.db
 flokus_academy.db
+
+# Python cache & build outputs
 __pycache__/
 *.pyc
-scratch/
-.DS_Store
+*.pyo
+*.pyd
+
+# Environment & Secrets
+.env
+.venv/
+env/
+venv/
 .streamlit/secrets.toml
+
+# Uploads & Temporary Scratch files
+uploads/
+scratch/
+
+# OS specific files
+.DS_Store
+Thumbs.db

@@ -52,32 +52,50 @@ def get_system_instruction(active_persona):
     return base_prompt + persona_guidelines
 
 def generate_quest_question(zone, pet_level):
-    """Calls Gemini to generate a zone-themed learning challenge question, falling back to static questions if offline."""
-    # Match zone key
-    zone_name = "Ruins"
-    if "Canyon" in zone:
-        zone_name = "Canyon"
-    elif "Forge" in zone:
-        zone_name = "Forge"
+    """Generates a category-themed learning challenge question tailored to current weekly lessons & season."""
+    zone_str = str(zone).lower()
+    if "canyon" in zone_str or "science" in zone_str or "stem" in zone_str:
+        zone_key = "Canyon"
+    elif "forge" in zone_str or "social" in zone_str or "history" in zone_str or "logic" in zone_str:
+        zone_key = "Forge"
+    else:
+        zone_key = "Ruins"
         
     gemini_key = get_gemini_api_key()
     if not gemini_key:
-        return random.choice(config.FALLBACK_QUESTIONS[zone_name])
+        return random.choice(config.FALLBACK_QUESTIONS[zone_key])
         
     try:
+        # Fetch current weekly curriculum context from DB
+        today = date.today()
+        pending = database.get_pending_tasks(today)
+        completed = database.get_completed_tasks(today)
+        active_topics = [t[1] for t in (pending + completed)[:5]]
+        topics_summary = ", ".join(active_topics) if active_topics else "Beast Academy math, Brave Writer, and Outschool Science"
+        
+        current_date_str = today.strftime("%B %d, %Y")
+        
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3.5-flash")
+        model = genai.GenerativeModel("gemini-1.5-flash")
         
         prompt = f"""
-        Generate one 5th-grade level multiple-choice quest question for a gamified learning app.
-        The question should be themed for this zone: '{zone}' and matches pet level: {pet_level}.
+        Generate one 5th-grade level multiple-choice quest trivia question for a student named Sonny.
+        Subject/Zone: '{zone}'
+        Pet Level: {pet_level}
+        Current Date / Season: {current_date_str}
+        Active Learning Topics This Week: {topics_summary}
         
-        Format your response ONLY as a raw JSON object (do not wrap in markdown ```json blocks) conforming to this schema:
+        Guidelines:
+        - If applicable, draw inspiration from what Sonny is learning this week ({topics_summary}) or current season/events.
+        - Ensure 3 distinct choices.
+        - Provide a helpful, encouraging Socratic hint.
+        
+        Format your response ONLY as a raw JSON object (no markdown ```json wrapper) conforming to this schema:
         {{
           "question": "Question text",
           "choices": ["Choice A", "Choice B", "Choice C"],
           "answer": "The exact string of the correct choice matching one in the choices list",
-          "hint": "A gentle Socratic hint that guides the student to the answer"
+          "hint": "A gentle Socratic hint guiding Sonny"
         }}
         """
         response = model.generate_content(prompt)
@@ -88,9 +106,12 @@ def generate_quest_question(zone, pet_level):
             raw_text = raw_text[:-3]
         raw_text = raw_text.strip()
         
-        return json.loads(raw_text)
+        parsed = json.loads(raw_text)
+        if "question" in parsed and "choices" in parsed and "answer" in parsed:
+            return parsed
+        return random.choice(config.FALLBACK_QUESTIONS[zone_key])
     except Exception:
-        return random.choice(config.FALLBACK_QUESTIONS[zone_name])
+        return random.choice(config.FALLBACK_QUESTIONS[zone_key])
 
 def parse_and_execute_schedule_command(user_input):
     """Uses natural language command processing to schedule tasks directly in the database."""
