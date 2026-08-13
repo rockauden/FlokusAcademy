@@ -103,7 +103,32 @@ async function submitBulk() {
       
       <div v-if="bulkPreview" class="mt-lg">
         <h3>Preview ({{ bulkPreview.length }} tasks)</h3>
-        <pre class="preview-box">{{ JSON.stringify(bulkPreview, null, 2) }}</pre>
+        
+        <div class="list-container mt-md">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Course ID</th>
+                <th>Type</th>
+                <th>Min</th>
+                <th>XP</th>
+                <th>Day Hint</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(task, idx) in bulkPreview" :key="idx">
+                <td>{{ task.title }}</td>
+                <td>{{ coursesStore.courses.find(c => c.id === task.course_id)?.title || task.course_id }}</td>
+                <td>{{ task.task_type }}</td>
+                <td>{{ task.estimated_minutes }}</td>
+                <td>{{ task.xp_reward }}</td>
+                <td>{{ ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][task.day_of_week_hint] || 'None' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
         <button class="btn-primary mt-md" @click="submitBulk">Confirm Import</button>
       </div>
     </div>
