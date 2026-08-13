@@ -1,4 +1,5 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api'
+const IS_PROD = window.location.hostname !== 'localhost'
+const API_BASE = IS_PROD ? 'https://flokusacademy-production.up.railway.app/api' : '/api'
 
 async function request(endpoint, options = {}) {
   const token = localStorage.getItem('token')
