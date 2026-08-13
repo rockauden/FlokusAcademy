@@ -1,7 +1,7 @@
 from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Course, Expense, User, SchoolEvent
+from app.models import Course, Expense, User, SchoolEvent, Reward
 from app.auth import hash_pin
 from app.config import settings
 
@@ -11,6 +11,20 @@ async def seed_initial_data(db_session: AsyncSession):
     existing_dad = result.scalars().first()
     if existing_dad:
         existing_dad.pin_hash = hash_pin(settings.ADMIN_PIN)
+        await db_session.commit()
+
+    # Seed default Rewards if none exist
+    result = await db_session.execute(select(Reward))
+    if not result.scalars().first():
+        rewards_data = [
+            Reward(title="30 Min Screen Time", description="Play a video game or watch YouTube", xp_cost=50, emoji="🎮", category="Entertainment"),
+            Reward(title="1 Hour Screen Time", description="Double the game time", xp_cost=90, emoji="🕹️", category="Entertainment"),
+            Reward(title="Pick the Dinner", description="You get to choose what Dad cooks for dinner tonight", xp_cost=150, emoji="🍕", category="Privilege"),
+            Reward(title="Stay Up 30 Mins Late", description="Push bedtime back by 30 minutes", xp_cost=100, emoji="🌙", category="Privilege"),
+            Reward(title="Skip a Chore", description="Pass one of your daily chores to Dad", xp_cost=200, emoji="🧹", category="Privilege"),
+            Reward(title="Special Treat", description="Ice cream or a special snack of your choice", xp_cost=75, emoji="🍦", category="Snack")
+        ]
+        db_session.add_all(rewards_data)
         await db_session.commit()
 
     # Check if courses already exist
