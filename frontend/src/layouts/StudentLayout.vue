@@ -15,11 +15,9 @@ function toggleSidebar() {
 }
 
 async function switchToAdmin() {
-  if (adminPin.value === '1234') { // Assume valid for now, or auth endpoint
-    const success = await authStore.login('dad', adminPin.value)
-    if (success) {
-      router.push('/admin')
-    }
+  const success = await authStore.login('dad', adminPin.value)
+  if (success) {
+    router.push('/admin')
   } else {
     alert('Incorrect PIN')
   }
