@@ -7,15 +7,23 @@ from ui.auth import is_admin, render_login_sidebar
 
 
 
+import plotly.express as px
+import plotly.graph_objects as go
+
 if not is_admin():
     render_login_sidebar()
     st.error("Access Denied. Administrator privileges required.")
     st.stop()
 
-st.title("Analytics")
+col_h1, col_h2 = st.columns([0.7, 0.3])
+with col_h1:
+    st.title("📊 Learning Intelligence Dashboard")
+    st.caption(f"Curriculum telemetry for Sonny's 5th Grade Program — "
+               f"Updated {date.today().strftime('%A, %B %d, %Y')}")
+with col_h2:
+    total_xp = database.get_xp_balance()
+    st.metric("Total XP Earned", f"💎 {total_xp}")
 
-st.subheader("📊 Flokus Learning Insights")
-st.write("Real-time telemetry showing study distribution and total XP momentum.")
 st.divider()
 
 st.markdown("### 🗓️ 7-Day Activity Radar")
@@ -29,14 +37,34 @@ active_dates = database.get_active_task_dates()
 for i in range(7):
     check_date = today_dt - timedelta(days=6-i)
     date_str = check_date.strftime("%Y-%m-%d")
-    day_label = check_date.strftime("%a\n%b %d")
+    
+    pending = database.get_pending_tasks(check_date)
+    completed = database.get_completed_tasks(check_date)
+    total = len(pending) + len(completed)
+    done = len(completed)
     
     with day_cols[i]:
-        if date_str in active_dates:
-            st.markdown("<div style='text-align: center; font-size: 26px;'>🟢</div>", unsafe_allow_html=True)
+        if total == 0:
+            color, icon = "#4a5568", "—"
+        elif done == total and done > 0:
+            color, icon = "#22c55e", "✓"
+        elif done > 0:
+            color, icon = "#f6ad55", f"{done}/{total}"
         else:
-            st.markdown("<div style='text-align: center; font-size: 26px;'>⚪</div>", unsafe_allow_html=True)
-        st.markdown(f"<div style='text-align: center; font-size: 13px; font-weight: bold; color: gray;'>{day_label}</div>", unsafe_allow_html=True)
+            color, icon = "#f56565", f"0/{total}"
+            
+        st.markdown(f"""
+        <div style="text-align:center; background:#121626; border:1px solid #283254;
+             border-radius:10px; padding:10px 4px;">
+            <div style="font-size:20px; font-weight:800; color:{color};">{icon}</div>
+            <div style="font-size:11px; color:#8c9bb4; margin-top:4px; font-weight:600;">
+                {check_date.strftime('%a')}<br>
+                <span style="font-size:10px; color:#4a5568;">
+                    {check_date.strftime('%b %d')}
+                </span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 st.divider()
 
 col_chart1, col_chart2 = st.columns(2)
@@ -94,7 +122,35 @@ with col_chart1:
     if df_master_analytics["Completed Milestones"].sum() == 0:
         st.info("📊 Telemetry offline. Complete daily quests or building projects to activate tracking!")
     else:
-        st.bar_chart(df_master_analytics)
+        df_plot = df_master_analytics.reset_index()
+        df_plot.columns = ["Subject", "Count"]
+        df_plot["Short"] = df_plot["Subject"].str.extract(r'\(([^)]+)\)')
+        df_plot["Short"] = df_plot["Short"].fillna(df_plot["Subject"])
+        df_plot = df_plot.sort_values("Count", ascending=True)
+
+        fig = go.Figure(go.Bar(
+            x=df_plot["Count"],
+            y=df_plot["Short"],
+            orientation='h',
+            marker=dict(
+                color=df_plot["Count"],
+                colorscale=[[0, "#1e2236"], [0.5, "#3b82f6"], [1.0, "#22c55e"]],
+                line=dict(color="#283254", width=1)
+            ),
+            text=df_plot["Count"],
+            textposition="outside",
+            textfont=dict(color="#e2e8f0", size=12)
+        ))
+        fig.update_layout(
+            paper_bgcolor="#0c0e17",
+            plot_bgcolor="#0c0e17",
+            font=dict(color="#e2e8f0", family="Outfit"),
+            xaxis=dict(gridcolor="#1f2336", color="#8c9bb4"),
+            yaxis=dict(gridcolor="rgba(0,0,0,0)", color="#e2e8f0"),
+            margin=dict(l=10, r=30, t=10, b=10),
+            height=320
+        )
+        st.plotly_chart(fig, use_container_width=True)
         
         # --- NEW: Live Rank Progression Leaderboard ---
         st.write("")

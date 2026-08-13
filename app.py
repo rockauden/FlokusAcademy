@@ -29,24 +29,31 @@ inject_css()
 if 'show_balloons' not in st.session_state:
     st.session_state.show_balloons = False
 
+if 'active_role' not in st.session_state:
+    st.session_state.active_role = "student"
+
 # ------------------------------------------
 # AUTHENTICATION & ROLE SELECTION
 # ------------------------------------------
 
-st.sidebar.title("🎓 Flokus Academy")
-st.sidebar.divider()
-
-# Role selector
-user_view = st.sidebar.radio(
-    "Who is using the dashboard?",
-    ["Sonny (Student)", "Dad (Admin)"],
-    key="user_view_selector"
-)
-
 # Admin authentication (only when admin is selected)
 admin_authenticated = False
-if user_view == "Dad (Admin)":
+if st.session_state.active_role == "admin":
+    st.sidebar.markdown("""
+    <div style='padding: 8px 0 4px;'>
+        <div style='font-size:13px; text-transform:uppercase; 
+            letter-spacing:1.5px; color:#f6ad55; font-weight:700;'>
+            ⚙️ ADMIN MODE
+        </div>
+        <div style='font-size:11px; color:#8c9bb4; margin-top:2px;'>
+            Full Curriculum Control Center
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     admin_authenticated = render_login_sidebar()
+else:
+    # Force a student-specific theme class (CSS will use this if needed)
+    st.markdown('<meta name="theme" content="student">', unsafe_allow_html=True)
 
 # ------------------------------------------
 # HELPER PAGES
@@ -66,8 +73,6 @@ student_pages = [
     st.Page("pages/student/daily_quests.py", title="Daily Quests", icon="📋"),
     st.Page("pages/student/school_calendar.py", title="School Calendar", icon="📅"),
     st.Page("pages/student/creator_block.py", title="Creator Block", icon="🛠️"),
-    st.Page("pages/student/reward_store.py", title="Reward Store", icon="🛍️"),
-    st.Page("pages/student/pet_arena.py", title="Pet Arena", icon="🐾"),
     st.Page("pages/student/ask_floki.py", title="Ask Floki", icon="💬"),
 ]
 
@@ -85,7 +90,6 @@ admin_monitor_pages = [
 
 admin_ops_pages = [
     st.Page("pages/admin/finances.py", title="UFA Finances", icon="💰"),
-    st.Page("pages/admin/store_manager.py", title="XP Store", icon="🎁"),
     st.Page("pages/admin/settings.py", title="Settings", icon="⚙️"),
 ]
 
@@ -93,7 +97,7 @@ admin_ops_pages = [
 # NAVIGATION ASSEMBLY
 # ------------------------------------------
 
-if user_view == "Sonny (Student)":
+if st.session_state.active_role == "student":
     # Student-only navigation
     nav = st.navigation({
         "🎓 Sonny's Hub": student_pages,
@@ -112,3 +116,10 @@ else:
     ])
 
 nav.run()
+
+if st.session_state.active_role == "student":
+    st.sidebar.write("")
+    st.sidebar.write("")
+    if st.sidebar.button("⚙️", help="Admin Access", key="admin_access_btn"):
+        st.session_state.active_role = "admin"
+        st.rerun()

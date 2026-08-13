@@ -182,5 +182,49 @@ def inject_css():
             color: #63b3ed;
             line-height: 1.1;
         }
+
+        /* Mission Step Indicator Row */
+        .mission-step-active {
+            color: #63b3ed !important;
+            font-weight: 700 !important;
+        }
+        .mission-step-done {
+            color: #22c55e !important;
+            font-weight: 700 !important;
+            text-decoration: line-through !important;
+            opacity: 0.7 !important;
+        }
+
+        /* Completed Mission Card */
+        .mission-complete-card {
+            background: linear-gradient(135deg, #0d2218, #0a1a12) !important;
+            border-left: 4px solid #22c55e !important;
+            border-radius: 10px !important;
+            opacity: 0.88 !important;
+        }
+
+        /* Sidebar Backpack Link */
+        .backpack-link:hover {
+            background: #1e2640 !important;
+            border-color: #63b3ed !important;
+            transform: translateX(4px) !important;
+        }
+
+        /* KPI card pulse on 100% complete */
+        @keyframes completePulse {
+            0%   { box-shadow: 0 0 0px rgba(34,197,94,0); }
+            50%  { box-shadow: 0 0 20px rgba(34,197,94,0.4); }
+            100% { box-shadow: 0 0 0px rgba(34,197,94,0); }
+        }
+        .kpi-complete {
+            animation: completePulse 1.5s ease-in-out 2 !important;
+        }
+
+        /* Slide-in animation for newly completed cards */
+        @keyframes slideIn {
+            from { transform: translateX(-10px); opacity: 0; }
+            to   { transform: translateX(0); opacity: 1; }
+        }
     </style>
     """, unsafe_allow_html=True)
+

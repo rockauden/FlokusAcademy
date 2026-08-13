@@ -49,6 +49,20 @@ if selected_p != current_p:
     st.rerun()
 # --- END NEW ---
 
+st.divider()
+st.markdown("### 📝 Mission Settings")
+st.caption("Configure requirements for student mission completion.")
+current_min_length = database.get_note_min_length()
+new_min_length = st.number_input(
+    "Minimum Characters for Mission Notes", 
+    min_value=0, max_value=500, value=current_min_length, step=5,
+    help="The minimum number of characters required when Sonny writes what he learned to mark a mission complete."
+)
+if new_min_length != current_min_length:
+    database.set_note_min_length(new_min_length)
+    st.success(f"Minimum note length updated to {new_min_length} characters.")
+    st.rerun()
+
 # --- NEW: One-Click Database Backups & Reset ---
 st.divider()
 st.markdown("### 📦 Database Management & Go-Live Prep")
@@ -75,37 +89,10 @@ with db_col1:
         
 with db_col2:
     with st.popover("🧹 Clear Test Data & Go Live", use_container_width=True):
-        st.warning("⚠️ **Warning:** This will permanently erase test tasks, test creator builds, purchase logs, chat history, and reset Sparky & UFA expenses back to baseline defaults!")
+        st.warning("⚠️ **Warning:** This will permanently erase test tasks, test creator builds, purchase logs, chat history, and reset UFA expenses back to baseline Odyssey defaults!")
         if st.button("🔴 Confirm Reset All Data", key="confirm_reset_all_data_btn", use_container_width=True):
             database.reset_all_test_data()
             st.success("🎉 Database reset complete! App is ready for live use.")
             st.rerun()
 # --- END NEW ---
         
-st.divider()
-st.markdown("### 🐾 Pet Override Console")
-st.caption("Manually adjust Sparky's levels or statistics for testing or corrections.")
-
-pet = database.get_pet_status()
-if pet:
-    pet_id, pet_name, pet_level, pet_xp, strength, intelligence, creativity, stamina, max_stamina, happiness, stage, form_name, accessory_parts = pet
-    
-    with st.form("pet_override_form"):
-        new_name = st.text_input("Override Pet Name", value=pet_name)
-        new_level = st.number_input("Override Level", min_value=1, max_value=100, value=pet_level)
-        new_xp = st.number_input("Override Current XP", min_value=0, value=pet_xp)
-        new_str = st.number_input("Override Strength", min_value=1, value=strength)
-        new_int = st.number_input("Override Intelligence", min_value=1, value=intelligence)
-        new_crt = st.number_input("Override Creativity", min_value=1, value=creativity)
-        new_stamina = st.number_input("Override Stamina", min_value=0, max_value=100, value=stamina)
-        new_max_stamina = st.number_input("Override Max Stamina", min_value=1, max_value=100, value=max_stamina)
-        
-        # Stage selection
-        stage_options = ["Egg", "Baby", "Rookie", "Champion", "Ultimate", "Mega"]
-        new_stage = st.selectbox("Override Stage", stage_options, index=stage_options.index(stage) if stage in stage_options else 0)
-        new_form_name = st.text_input("Override Form Name", value=form_name)
-        
-        if st.form_submit_button("Save Override Changes"):
-            database.override_pet_status(pet_id, new_name, new_level, new_xp, new_str, new_int, new_crt, new_stamina, new_max_stamina, new_stage, new_form_name)
-            st.success("Pet overridden successfully!")
-            st.rerun()

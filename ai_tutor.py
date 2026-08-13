@@ -143,7 +143,7 @@ def parse_and_execute_schedule_command(user_input):
     
     try:
         genai.configure(api_key=gemini_key)
-        model = genai.GenerativeModel("gemini-3.5-flash")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         
         response = model.generate_content([system_instruction, f"Request: {user_input}"])
         raw_text = response.text.strip()
@@ -184,7 +184,7 @@ def generate_chat_response(chat_logs, active_persona):
         genai.configure(api_key=gemini_key)
         system_instruction = get_system_instruction(active_persona)
         model = genai.GenerativeModel(
-            model_name="gemini-3.5-flash",
+            model_name="gemini-2.0-flash",
             system_instruction=system_instruction
         )
         

@@ -15,14 +15,20 @@ import database
 def render_school_notifications_bar():
     """Renders the upcoming school alerts & notifications expander bar."""
     active_notifications = database.get_upcoming_event_notifications(date.today())
+    role = st.session_state.get('active_role', 'student')
     if active_notifications:
         with st.expander(f"🔔 **Upcoming School Alerts & Notifications ({len(active_notifications)})**", expanded=True):
             for notif in active_notifications:
-                render_notification_card(notif)
+                render_notification_card(notif, role)
 
 
-def render_notification_card(notif):
+def render_notification_card(notif, role="student"):
     """Renders a single notification event card with urgency styling."""
+    if role == "student":
+        # Softer language for student view — hide admin action items
+        if "curriculum" in notif.get("description", "").lower() or "audit" in notif.get("description", "").lower():
+            return  # Skip admin-targeted notifications in student view
+            
     urgency = notif['importance'].lower()
     badge_class = f"badge-{urgency}" if urgency in ['urgent', 'important', 'normal'] else "badge-normal"
 
@@ -108,18 +114,27 @@ def render_focus_timer(task_id):
             timer_html = f"""
             <div style="background-color: #1a2238; border: 1px solid #63b3ed; border-radius: 8px; padding: 15px; text-align: center; font-family: 'Outfit', sans-serif;">
                 <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #8c9bb4; margin-bottom: 5px;">⌛ Active Focus Window</div>
-                <div id="countdown-val" style="font-size: 32px; font-weight: bold; color: #63b3ed;">00:00</div>
+                <div id="countdown-val-{task_id}" style="font-size: 32px; font-weight: bold; color: #63b3ed;">00:00</div>
             </div>
             <script>
                 let seconds = {remaining};
+                function getColor(secs) {{
+                    if (secs > 300) return '#63b3ed';
+                    if (secs > 60)  return '#f6ad55';
+                    return '#f56565';
+                }}
                 function updateTimer() {{
+                    let el = document.getElementById('countdown-val-{task_id}');
+                    if (!el) return;
+                    
                     let mins = Math.floor(seconds / 60);
                     let secs = seconds % 60;
-                    document.getElementById('countdown-val').innerText =
-                        `${{mins.toString().padStart(2, '0')}}:${{secs.toString().padStart(2, '0')}}`;
+                    el.innerText = `${{mins.toString().padStart(2, '0')}}:${{secs.toString().padStart(2, '0')}}`;
+                    el.style.color = getColor(seconds);
+                    
                     if (seconds <= 0) {{
-                        document.getElementById('countdown-val').innerText = "🎉 Focus Sprint Complete! You crushed it!";
-                        document.getElementById('countdown-val').style.color = "#22c55e";
+                        el.innerText = "🎉 Focus Sprint Complete! You crushed it!";
+                        el.style.color = "#22c55e";
                     }} else {{
                         seconds--;
                         setTimeout(updateTimer, 1000);
@@ -280,3 +295,144 @@ def render_countdown_hero(next_event):
         {desc_html}
     </div>
     """, unsafe_allow_html=True)
+
+def trigger_completion_effect(is_boss: bool, streak: int):
+    """Fires tiered visual feedback based on achievement tier."""
+    if is_boss:
+        st.snow()
+        st.markdown("""
+        <div style="
+            background: linear-gradient(135deg, #2d164d, #170b29);
+            border: 2px solid #9f7aea;
+            border-radius: 14px;
+            padding: 20px;
+            text-align: center;
+            animation: pulse 0.6s ease-in-out;
+            box-shadow: 0 0 30px rgba(159, 122, 234, 0.5);
+        ">
+            <div style="font-size: 36px;">👑</div>
+            <div style="font-size: 22px; font-weight: 800; color: #d6bcfa;">
+                BOSS DEFEATED!
+            </div>
+            <div style="font-size: 15px; color: #b794f4; margin-top: 6px;">
+                Double XP Awarded! You're unstoppable.
+            </div>
+        </div>
+        <style>
+            @keyframes pulse {{
+                0% {{ transform: scale(0.9); opacity: 0; }}
+                100% {{ transform: scale(1); opacity: 1; }}
+            }}
+        </style>
+        """, unsafe_allow_html=True)
+    elif streak > 0 and streak % 5 == 0:
+        st.balloons()
+        st.success(f"🔥 **{streak}-Day Streak!** You're on fire, Sonny!")
+    else:
+        st.balloons()
+
+def render_animated_progress(progress_pct: int, label: str = "Daily Quest Progress"):
+    """Renders a custom animated progress bar with glow effect."""
+    bar_color = "#22c55e" if progress_pct == 100 else "#63b3ed"
+    glow = "0 0 12px rgba(34, 197, 94, 0.5)" if progress_pct == 100 else "0 0 8px rgba(99, 179, 237, 0.3)"
+    
+    st.markdown(f"""
+    <div style="margin: 8px 0 16px;">
+        <div style="display:flex; justify-content:space-between; 
+             font-size:13px; color:#8c9bb4; margin-bottom:6px;">
+            <span>{label}</span>
+            <span style="font-weight:700; color:{bar_color};">{progress_pct}%</span>
+        </div>
+        <div style="background:#1e2236; border-radius:999px; height:10px; 
+             border:1px solid #283254; overflow:hidden;">
+            <div style="
+                width: {progress_pct}%;
+                height: 100%;
+                background: linear-gradient(90deg, #3b82f6, {bar_color});
+                border-radius: 999px;
+                box-shadow: {glow};
+                transition: width 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+            "></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_student_kpi_card(label, value, subtitle, icon, color="#63b3ed", extra_class=""):
+    """Renders a styled KPI card with contextual subtitle."""
+    st.markdown(f"""
+    <div class="{extra_class}" style="
+        background: linear-gradient(135deg, #181c2e, #111422);
+        border: 1px solid #232a45;
+        border-radius: 14px;
+        padding: 18px 20px;
+        text-align: center;
+        transition: all 0.25s ease;
+    ">
+        <div style="font-size: 28px;">{icon}</div>
+        <div style="font-size: 28px; font-weight: 800; color:{color}; 
+             line-height: 1.1; margin: 4px 0;">{value}</div>
+        <div style="font-size: 12px; text-transform: uppercase; 
+             letter-spacing: 0.8px; color: #8c9bb4; font-weight: 600;">{label}</div>
+        <div style="font-size: 11px; color: #4a5568; margin-top: 4px;">{subtitle}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_completed_mission_card(task_title, task_category, xp_earned, summary, emoji, just_done=False):
+    """Renders a visually distinct completed mission card."""
+    animation_style = "animation: slideIn 0.4s ease-out;" if just_done else ""
+    st.markdown(f"""
+    <div class="mission-complete-card" style="
+        padding: 12px 16px;
+        margin-bottom: 8px;
+        {animation_style}
+    ">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:20px;">✅</span>
+            <div>
+                <div style="font-weight:700; color:#86efac; font-size:14px;">
+                    {emoji} {task_title}
+                </div>
+                <div style="font-size:12px; color:#4ade80; margin-top:2px;">
+                    {task_category} &nbsp;·&nbsp; +{xp_earned} XP earned
+                </div>
+                {f'<div style="font-size:11px; color:#6b7280; margin-top:4px; font-style:italic;">📝 {summary}</div>' if summary else ''}
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+def render_weekly_momentum_strip(week_dates, db):
+    """Renders a horizontal week progress strip showing completion per day."""
+    st.markdown("<div style='margin: 12px 0 8px; font-size:12px; color:#8c9bb4; "
+                "text-transform:uppercase; letter-spacing:1px;'>This Week</div>",
+                unsafe_allow_html=True)
+    cols = st.columns(5)
+    today = date.today()
+    for i, (col, d) in enumerate(zip(cols, week_dates)):
+        with col:
+            pending = db.get_pending_tasks(d)
+            completed = db.get_completed_tasks(d)
+            total = len(pending) + len(completed)
+            done = len(completed)
+            is_today = (d == today)
+            
+            if total == 0:
+                dot_color, label = "#2d3748", "—"
+            elif done == total:
+                dot_color, label = "#22c55e", "✓"
+            elif done > 0:
+                dot_color, label = "#f6ad55", f"{done}/{total}"
+            else:
+                dot_color, label = "#63b3ed", f"0/{total}"
+                
+            border = "2px solid #6366f1" if is_today else "1px solid #283254"
+            st.markdown(f"""
+            <div style="text-align:center; background:#121626; border:{border};
+                 border-radius:10px; padding:8px 4px;">
+                <div style="font-size:16px; font-weight:800; color:{dot_color};">{label}</div>
+                <div style="font-size:10px; color:#4a5568; margin-top:2px;">
+                    {d.strftime('%a')}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+

@@ -35,3 +35,4 @@ def is_admin():
 def logout():
     """Clears admin authentication from session state."""
     st.session_state["_admin_authenticated"] = False
+    st.session_state["active_role"] = "student"
