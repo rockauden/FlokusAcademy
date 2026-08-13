@@ -1,19 +1,22 @@
 from datetime import datetime, timedelta, timezone
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from app.config import settings
 from typing import Optional, Dict, Any
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 def hash_pin(pin: str) -> str:
-    return pwd_context.hash(pin)
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pin.encode('utf-8'), salt).decode('utf-8')
 
 def verify_pin(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    try:
+        return bcrypt.checkpw(plain.encode('utf-8'), hashed.encode('utf-8'))
+    except ValueError:
+        return False
 
 def create_access_token(data: dict) -> str:
     to_encode = data.copy()
