@@ -7,7 +7,7 @@ from app.config import settings
 from app.database import init_db, async_session_maker
 from app.services.curriculum_seeder import seed_initial_data
 
-from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor
+from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards
 
 app = FastAPI(
     title="Flokus Academy API",
@@ -34,6 +34,7 @@ app.include_router(expenses.router)
 app.include_router(projects.router)
 app.include_router(analytics.router)
 app.include_router(ai_tutor.router)
+app.include_router(rewards.router)
 
 if os.path.exists("uploads"):
     app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

@@ -40,13 +40,3 @@ async def read_users_me(current_user: dict = Depends(get_current_user), db: Asyn
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return {"username": user.username, "display_name": user.display_name, "role": user.role}
-
-@router.get("/reset-pin")
-async def reset_pin(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.username == 'dad'))
-    dad = result.scalars().first()
-    if dad:
-        dad.pin_hash = hash_pin("1234")
-        await db.commit()
-        return {"message": "Success! Your PIN has been reset to 1234. You can now log in."}
-    return {"message": "User not found."}

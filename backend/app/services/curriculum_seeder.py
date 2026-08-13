@@ -6,10 +6,17 @@ from app.auth import hash_pin
 from app.config import settings
 
 async def seed_initial_data(db_session: AsyncSession):
+    # Always sync teacher PIN with current ADMIN_PIN env var
+    result = await db_session.execute(select(User).where(User.username == 'dad'))
+    existing_dad = result.scalars().first()
+    if existing_dad:
+        existing_dad.pin_hash = hash_pin(settings.ADMIN_PIN)
+        await db_session.commit()
+
     # Check if courses already exist
     result = await db_session.execute(select(Course))
     if result.scalars().first():
-        return # Data already seeded
+        return  # Data already seeded
         
     # Seed Users
     dad = User(username='dad', display_name='Dad', role='teacher', pin_hash=hash_pin(settings.ADMIN_PIN))
