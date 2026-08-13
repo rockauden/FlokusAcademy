@@ -36,7 +36,7 @@ function parseBulk() {
     const data = JSON.parse(bulkText.value)
     bulkPreview.value = Array.isArray(data) ? data : [data]
   } catch (e) {
-    alert('Invalid JSON')
+    alert('Invalid JSON formatting: ' + e.message + '\n\nCheck for missing commas, extra commas at the end, or missing quotes.')
   }
 }
 
