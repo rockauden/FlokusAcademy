@@ -68,7 +68,9 @@ class TaskBase(BaseModel):
     sequence_order: int = 0
     school_day_offset: Optional[int] = None
     scheduled_date: Optional[date] = None
-    day_of_week_hint: Optional[int] = None
+    # 0=Mon … 3=Thu. get_school_days treats weekday() >= 4 as weekend, so a
+    # hint of 4 (Fri) would place a lesson on a non-school day.
+    day_of_week_hint: Optional[int] = Field(None, ge=0, le=3)
     dependency_mode: str = 'independent'
     estimated_minutes: int = 30
     xp_reward: int = 10
@@ -97,7 +99,7 @@ class TaskResponse(TaskBase):
 
 class TaskComplete(BaseModel):
     completion_notes: str = ''
-    focus_minutes: int = 0
+    focus_minutes: int = Field(0, ge=0, le=480)
 
 # --- School Calendar ---
 class SchoolCalendarEntryBase(BaseModel):
@@ -184,8 +186,12 @@ class CreatorProjectResponse(CreatorProjectBase):
 # --- Reward ---
 class RewardBase(BaseModel):
     name: str
+    description: str = ''
+    emoji: str = '🎁'
+    category: str = 'General'
     xp_cost: int
     inventory_qty: int = 1
+    is_active: bool = True
 
 class RewardCreate(RewardBase):
     pass
@@ -202,8 +208,10 @@ class PurchaseBase(BaseModel):
     purchase_date: date
     is_claimed: bool = False
 
-class PurchaseCreate(PurchaseBase):
-    pass
+class PurchaseCreate(BaseModel):
+    """The client picks *which* reward. Price, name, date and claim state are
+    server facts and are never accepted from the request body."""
+    reward_id: int
 
 class PurchaseResponse(PurchaseBase):
     id: int
@@ -221,6 +229,20 @@ class ChatMessageCreate(ChatMessageBase):
 
 class ChatMessageResponse(ChatMessageBase):
     id: int
+    timestamp: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+# --- COPPA consent ---
+class ConsentRecordCreate(BaseModel):
+    consent_version: str = Field(..., max_length=50)
+    is_granted: bool = True
+
+class ConsentRecordResponse(BaseModel):
+    id: int
+    tenant_id: int
+    parent_id: int
+    consent_version: str
+    is_granted: bool
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 

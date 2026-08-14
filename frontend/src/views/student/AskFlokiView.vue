@@ -9,8 +9,22 @@ const loading = ref(false)
 const persona = ref('Socratic Tutor')
 
 onMounted(async () => {
-  const history = await api.get(`/ai/history/${sessionId}`)
-  if (history) messages.value = history
+  try {
+    const history = await api.get(`/ai/history/${sessionId}`)
+    // The API returns rows shaped { sender, message }; the template renders
+    // { role, content }. Without this mapping every bubble renders empty.
+    // The API stores role-based senders ('student' / 'assistant'). Older rows
+    // used the child's first name, so treat anything that isn't the assistant
+    // as the student.
+    messages.value = Array.isArray(history)
+      ? history.map(h => ({
+          role: h.sender === 'assistant' || h.sender === 'Floki' ? 'assistant' : 'user',
+          content: h.message
+        }))
+      : []
+  } catch (e) {
+    console.error(e)
+  }
 })
 
 async function sendMessage(text) {
@@ -27,7 +41,7 @@ async function sendMessage(text) {
       message: msg,
       persona: persona.value
     })
-    messages.value.push({ role: 'assistant', content: res.response })
+    messages.value.push({ role: 'assistant', content: res.message })
   } catch (e) {
     console.error(e)
   } finally {

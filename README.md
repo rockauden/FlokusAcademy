@@ -2,86 +2,81 @@
 
 **Flokus Academy** is a comprehensive, gamified Learning Management System (LMS) and homeschooling dashboard built for 5th-grade instruction. It synchronizes a 9-program curriculum suite into a single interface, balancing core academic hubs, applied STEM spokes, XP gamification, AI Socratic tutoring, and parental compliance tracking.
 
+> **Note**: Flokus Academy recently migrated to **v2**, which features a decoupled architecture with a Vue 3 frontend and a FastAPI backend. The legacy Streamlit (v1) version is archived.
+
 ---
 
 ## ✨ Key Features
 
 ### 🎓 1. Student Learning Hub
 * **📋 Daily Quests**: Interactive daily task manager with XP rewards (💎), Daily Boss Fights (👑), and screen-time balance indicators.
-* **💬 Socratic AI Tutor ("Ask Floki")**: Gemini-powered AI tutor with interchangeable personas (**Norse Boatbuilder**, **Space Robot**, **Socratic Tutor**) guiding students step-by-step.
-* **🐾 Pet Arena ("Sparky")**: Virtual pet companion mechanics—feed, train, participate in trivia battles, and explore dungeon zones as reward incentives.
+* **💬 Socratic AI Tutor ("Ask Floki")**: Gemini-powered AI tutor with interchangeable personas guiding students step-by-step.
+* **🐾 Virtual Pets & Rewards**: Virtual pet companion mechanics and an XP Reward Store for real-world rewards.
 * **🛠️ Creator Block**: Portfolio hub for hands-on engineering builds, coding projects, and video showcases.
-* **🛍️ XP Reward Store**: Redeem earned XP for real-world rewards, screen-time passes, or custom family incentives.
 * **📅 School Calendar**: Student view for live classes, kit delivery dates, field trips, and term milestones.
 
 ### 👨‍👧 2. Parent & Admin Dashboard
-* **📝 Task Management & Lesson Scheduler**:
-  * **⚡ Quick Add**: Instant single-lesson scheduler.
-  * **📅 Weekly Grid & Screen-Time Audit**: Visual 5-day workload grid with real-time **Offline 📖 vs. Online 💻 screen-time balance auditing**.
-  * **⚙️ Master Curriculum Scheduler (Tier 1 & Tier 2)**: 1-click batch scheduler driven by the 36-week / 9-unit master curriculum map.
+* **📝 Task Management & Lesson Scheduler**: Weekly grids and curriculum map scheduling.
 * **📊 Analytics & Compliance**: Track subject mastery, weekly XP velocity, and generate proof-of-work academic portfolio reports.
-* **💰 UFA & Scholarship Finances**: Expense tracking for state homeschooling scholarship funds (e.g., Arizona UFA/ESA), category caps, and receipt management.
+* **💰 UFA & Scholarship Finances**: Expense tracking for state homeschooling scholarship funds (e.g., Arizona UFA/ESA).
 * **🎁 XP Store Operations**: Manage reward inventories, costs, and redemption approvals.
 
 ---
 
-## 🧩 9-Program Master Curriculum Integration
+## 🏗️ Architecture
 
-Flokus Academy synchronizes 9 core academic programs across 4 quarters and 9 unit blocks:
+Flokus Academy v2 uses a modern web stack:
 
-```
-Core Foundational Hubs                   Applied Project Spokes
-----------------------                   ----------------------
-🧮 Math: Beast Academy                   🧪 STEM: CrunchLabs Build Boxes
-✍️ Language Arts: Brave Writer Dart       🏫 Electives: Outschool Live Classes
-🗺️ History: Tuttle Twins America          ⚔️ Interactive STEM: Brilliant.org
-🧠 Critical Thinking Co.                 🤖 Strategy & AI: Synthesis
-                                         ♟️ Strategy & Tactics: Chess.com
-```
+* **Frontend (`/frontend`)**: Vue 3 + Vite + Pinia state management + Vue Router.
+* **Backend (`/backend`)**: Python FastAPI + SQLAlchemy (asyncpg) + PostgreSQL.
+* **AI Integration**: Google GenAI integration for the Socratic AI Tutor.
 
 ---
 
 ## 🚀 Quick Start & Installation
 
 ### Prerequisites
+* Node.js 18+
 * Python 3.10+
-* Streamlit
+* PostgreSQL database
 
-### Setup Instructions
+### 1. Backend Setup
 
-1. **Clone the Repository**:
+1. **Navigate to the backend directory**:
    ```bash
-   git clone https://github.com/rockauden/FlokusAcademy.git
-   cd FlokusAcademy
+   cd backend
    ```
-
 2. **Install Dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
-
-3. **Configure Environment Secrets (Optional for AI Tutor)**:
-   Create `.streamlit/secrets.toml`:
-   ```toml
-   GEMINI_API_KEY = "your_google_gemini_api_key"
-   admin_pin = "1234"
-   ```
-
-4. **Launch the Application**:
+3. **Environment Setup**: Create a `.env` file based on your environment needs (e.g., `DATABASE_URL`, `GEMINI_API_KEY`).
+4. **Run the API**:
    ```bash
-   streamlit run app.py
+   uvicorn app.main:app --reload
    ```
-   Or run using the provided Windows batch script:
-   ```cmd
-   run_flokus.bat
+   The backend API will run on `http://localhost:8000`.
+
+### 2. Frontend Setup
+
+1. **Navigate to the frontend directory**:
+   ```bash
+   cd frontend
    ```
+2. **Install Dependencies**:
+   ```bash
+   npm install
+   ```
+3. **Run the Development Server**:
+   ```bash
+   npm run dev
+   ```
+   The frontend will be available at `http://localhost:5173`.
 
 ---
 
 ## 🛡️ Privacy & Security
-- Local database files (`*.db`), uploaded receipts, temporary scratch files, and API keys (`.streamlit/secrets.toml`) are strictly excluded via `.gitignore`.
-
----
+- Local database files, uploaded receipts, temporary scratch files, and `.env` secrets are strictly excluded via `.gitignore`.
 
 ## 📄 License
 MIT License. Created for Flokus Academy.

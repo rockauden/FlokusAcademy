@@ -9,17 +9,23 @@ const authStore = useAuthStore()
 const sidebarOpen = ref(false)
 const showPinModal = ref(false)
 const adminPin = ref('')
+const pinError = ref('')
 
 function toggleSidebar() {
   sidebarOpen.value = !sidebarOpen.value
 }
 
 async function switchToAdmin() {
-  const success = await authStore.login('dad', adminPin.value)
-  if (success) {
+  pinError.value = ''
+  try {
+    await authStore.login('dad', adminPin.value)
+    adminPin.value = ''
+    showPinModal.value = false
     router.push('/admin')
-  } else {
-    alert('Incorrect PIN')
+  } catch (e) {
+    // login() now rejects rather than returning false, so this has to be
+    // caught or it surfaces as an unhandled rejection with no feedback.
+    pinError.value = e?.message || 'Login failed. Please try again.'
   }
 }
 </script>
@@ -71,7 +77,8 @@ async function switchToAdmin() {
         <h3>Admin Access</h3>
         <div class="form-group mt-md">
           <label>Enter Teacher PIN</label>
-          <input type="password" v-model="adminPin" placeholder="****" />
+          <input type="password" v-model="adminPin" placeholder="****" @keyup.enter="switchToAdmin" />
+          <p v-if="pinError" class="error mt-sm">{{ pinError }}</p>
         </div>
         <div class="flex-row" style="display:flex;gap:8px;margin-top:16px;">
           <button class="btn-primary" @click="switchToAdmin">Switch to Admin</button>

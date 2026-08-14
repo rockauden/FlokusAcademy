@@ -6,21 +6,48 @@ import { useAuthStore } from '../stores/auth'
 const router = useRouter()
 const authStore = useAuthStore()
 
-const mode = ref('select') // select, pin
+const mode = ref('select') // 'select' | 'student' | 'teacher'
 const pin = ref('')
 const errorMsg = ref('')
+const submitting = ref(false)
 
-async function loginStudent() {
-  const success = await authStore.login('sonny', null)
-  if (success) router.push('/student')
+const ROLES = {
+  student: { username: 'sonny', heading: "Enter Sonny's PIN", destination: '/student' },
+  teacher: { username: 'dad', heading: 'Enter Teacher PIN', destination: '/admin' }
 }
 
-async function loginTeacher() {
-  const success = await authStore.login('dad', pin.value)
-  if (success) {
-    router.push('/admin')
-  } else {
-    errorMsg.value = 'Invalid PIN'
+function choose(role) {
+  mode.value = role
+  pin.value = ''
+  errorMsg.value = ''
+}
+
+function back() {
+  mode.value = 'select'
+  pin.value = ''
+  errorMsg.value = ''
+}
+
+async function submitPin() {
+  const role = ROLES[mode.value]
+  if (!role || submitting.value) return
+
+  if (!pin.value) {
+    errorMsg.value = 'Please enter your PIN.'
+    return
+  }
+
+  submitting.value = true
+  errorMsg.value = ''
+  try {
+    await authStore.login(role.username, pin.value)
+    router.push(role.destination)
+  } catch (e) {
+    // The store rethrows the API's message, so a wrong PIN and a rate limit
+    // read differently instead of both showing "Invalid PIN".
+    errorMsg.value = e?.message || 'Login failed. Please try again.'
+  } finally {
+    submitting.value = false
   }
 }
 </script>
@@ -31,13 +58,13 @@ async function loginTeacher() {
       <h1 class="title">🎓 Flokus Academy</h1>
       
       <div v-if="mode === 'select'" class="cards-container">
-        <button class="role-card" @click="loginStudent">
+        <button class="role-card" @click="choose('student')">
           <div class="emoji">📋</div>
           <h3>Sonny's Hub</h3>
           <p>Student Access</p>
         </button>
-        
-        <button class="role-card teacher" @click="mode = 'pin'">
+
+        <button class="role-card teacher" @click="choose('teacher')">
           <div class="emoji">⚙️</div>
           <h3>Dad's Dashboard</h3>
           <p>Teacher Access</p>
@@ -45,12 +72,23 @@ async function loginTeacher() {
       </div>
 
       <div v-else class="pin-container">
-        <h3>Enter Teacher PIN</h3>
-        <input type="password" v-model="pin" placeholder="****" class="pin-input" />
+        <h3>{{ ROLES[mode].heading }}</h3>
+        <input
+          type="password"
+          inputmode="numeric"
+          autocomplete="off"
+          v-model="pin"
+          placeholder="****"
+          class="pin-input"
+          :disabled="submitting"
+          @keyup.enter="submitPin"
+        />
         <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
         <div class="actions">
-          <button class="btn-primary" @click="loginTeacher">Login</button>
-          <button class="btn-ghost" @click="mode = 'select'; errorMsg = ''">Back</button>
+          <button class="btn-primary" @click="submitPin" :disabled="submitting">
+            {{ submitting ? 'Checking…' : 'Login' }}
+          </button>
+          <button class="btn-ghost" @click="back" :disabled="submitting">Back</button>
         </div>
       </div>
     </div>

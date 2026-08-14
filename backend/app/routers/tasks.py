@@ -1,15 +1,105 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+"""Student-facing work.
+
+The API vocabulary here is still "task" — the routes and JSON field names are
+unchanged so the Vue client keeps working. Internally a "task" is now an
+Assignment (student state) joined to a Lesson (curriculum template), and the
+`id` the client sees and posts back is always the assignment id.
+"""
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
-from sqlalchemy.orm import joinedload
 from typing import List, Optional
 from datetime import date
 from app.database import get_db
 from app.schemas import TaskCreate, TaskUpdate, TaskResponse, TaskComplete, StudentDayView, StudentTaskExtended, StudentDayCourseInfo
-from app.models import Task, Course
-from app.auth import get_current_user, require_teacher
+from app.models import Assignment, Lesson, User
+from app.auth import get_current_active_user, require_teacher_user
+from app.repository import AssignmentRepository, LessonRepository
+from app.services.xp_service import award_xp, reverse_xp_for_source
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+
+SOURCE_TYPE = 'assignment'
+
+
+def lesson_xp(lesson: Lesson) -> int:
+    """Boss fights are worth double. Defined once so the award and the reversal
+    can never use different arithmetic."""
+    return lesson.xp_reward * (2 if lesson.is_boss_fight else 1)
+
+
+def _merge(a: Assignment) -> dict:
+    """Flatten Assignment + Lesson into the shape the client already expects.
+
+    `id` is the assignment id — that is what /complete, PUT and DELETE take.
+    `course_id`/`module_id` keep their old names in the payload; internally
+    they are Lesson.program_id / Lesson.unit_id.
+    """
+    lesson = a.lesson
+    return {
+        "id": a.id,
+        "course_id": lesson.program_id,
+        "module_id": lesson.unit_id,
+        "title": lesson.title,
+        "description": lesson.description,
+        "task_type": lesson.task_type,
+        "resource_url": lesson.resource_url,
+        "resource_path": lesson.resource_path,
+        "workbook_pages": lesson.workbook_pages,
+        "sequence_order": lesson.sequence_order,
+        "school_day_offset": lesson.school_day_offset,
+        "day_of_week_hint": lesson.day_of_week_hint,
+        "dependency_mode": lesson.dependency_mode,
+        "estimated_minutes": lesson.estimated_minutes,
+        "xp_reward": lesson.xp_reward,
+        "is_boss_fight": lesson.is_boss_fight,
+        "medium": lesson.medium,
+        "ufa_eligible": lesson.ufa_eligible,
+        "ufa_hours_credit": lesson.ufa_hours_credit,
+        "scheduled_date": a.scheduled_date,
+        "is_completed": a.is_completed,
+        "actual_completion_date": a.actual_completion_date,
+        "completion_notes": a.completion_notes,
+        "focus_minutes": a.focus_minutes,
+        "created_at": a.created_at,
+    }
+
+
+def _split_payload(task: TaskCreate) -> tuple[dict, Optional[date]]:
+    """Separate curriculum fields (Lesson) from instance fields (Assignment).
+
+    The client still speaks the old flat vocabulary, so course_id/module_id are
+    translated here and scheduled_date is peeled off — Lesson has no such
+    column any more and would reject it.
+    """
+    payload = task.model_dump()
+    scheduled_date = payload.pop('scheduled_date', None)
+    payload['program_id'] = payload.pop('course_id')
+    payload['unit_id'] = payload.pop('module_id')
+    return payload, scheduled_date
+
+
+async def _assign_to_students(
+    db: AsyncSession, tenant_id: int, lesson: Lesson, scheduled_date: Optional[date]
+) -> list[Assignment]:
+    """Hand a newly authored lesson to every student in the tenant.
+
+    Authoring a lesson and a student receiving it are now separate facts, but
+    the admin UI still expects "create a task and it shows up in the day", so
+    this keeps that behaviour.
+    """
+    students = await LessonRepository.list_students(db, tenant_id=tenant_id)
+    created = []
+    for student in students:
+        assignment = Assignment(
+            tenant_id=tenant_id,
+            student_id=student.id,
+            lesson_id=lesson.id,
+            scheduled_date=scheduled_date,
+        )
+        db.add(assignment)
+        created.append(assignment)
+    return created
+
 
 @router.get("/", response_model=List[TaskResponse])
 async def list_tasks(
@@ -18,126 +108,186 @@ async def list_tasks(
     scheduled_date: Optional[date] = None,
     is_completed: Optional[bool] = None,
     dependency_mode: Optional[str] = None,
-    db: AsyncSession = Depends(get_db), 
-    current_user: dict = Depends(get_current_user)
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
 ):
-    query = select(Task)
-    if course_id is not None:
-        query = query.where(Task.course_id == course_id)
-    if module_id is not None:
-        query = query.where(Task.module_id == module_id)
-    if scheduled_date is not None:
-        query = query.where(Task.scheduled_date == scheduled_date)
-    if is_completed is not None:
-        query = query.where(Task.is_completed == is_completed)
-    if dependency_mode is not None:
-        query = query.where(Task.dependency_mode == dependency_mode)
-    
-    query = query.order_by(Task.sequence_order)
-    result = await db.execute(query)
-    return result.scalars().all()
+    # A teacher sees the whole tenant's assignments; a student only their own.
+    student_filter = None if user.role == 'teacher' else user.id
+    assignments = await AssignmentRepository.list(
+        db,
+        tenant_id=user.tenant_id,
+        student_id=student_filter,
+        program_id=course_id,
+        unit_id=module_id,
+        scheduled_date=scheduled_date,
+        is_completed=is_completed,
+        dependency_mode=dependency_mode,
+    )
+    return [TaskResponse(**_merge(a)) for a in assignments]
 
 @router.get("/today", response_model=StudentDayView)
-async def get_today_tasks(db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
+async def get_today_tasks(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
     today = date.today()
-    # All incomplete tasks where scheduled_date <= today, ordered by dependency_mode, course sort_order, sequence_order
-    # 'independent' comes before others alphabetically
-    query = (
-        select(Task)
-        .options(joinedload(Task.course))
-        .join(Course)
-        .where(Task.is_completed == False, Task.scheduled_date <= today)
-        .order_by(Task.dependency_mode.asc(), Course.sort_order.asc(), Task.sequence_order.asc())
+    assignments = await AssignmentRepository.get_today(
+        db, tenant_id=user.tenant_id, student_id=user.id, today=today
     )
-    result = await db.execute(query)
-    tasks = result.scalars().all()
-    
+
     student_tasks = []
-    for t in tasks:
+    for a in assignments:
+        program = a.lesson.program
         course_info = StudentDayCourseInfo(
-            id=t.course.id,
-            title=t.course.title,
-            emoji=t.course.emoji,
-            color_hex=t.course.color_hex,
-            platform_url=t.course.platform_url
+            id=program.id,
+            title=program.title,
+            emoji=program.emoji,
+            color_hex=program.color_hex,
+            platform_url=program.platform_url,
         )
-        task_dict = {c.name: getattr(t, c.name) for c in t.__table__.columns}
-        st = StudentTaskExtended(**task_dict, course=course_info)
-        student_tasks.append(st)
-        
+        student_tasks.append(StudentTaskExtended(**_merge(a), course=course_info))
+
     return StudentDayView(date=today, tasks=student_tasks)
 
 @router.post("/", response_model=TaskResponse)
-async def create_task(task: TaskCreate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_teacher)):
-    new_task = Task(**task.model_dump())
-    db.add(new_task)
+async def create_task(task: TaskCreate, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
+    payload, scheduled_date = _split_payload(task)
+    lesson = Lesson(**payload, tenant_id=user.tenant_id)
+    db.add(lesson)
+    await db.flush()
+
+    assignments = await _assign_to_students(db, user.tenant_id, lesson, scheduled_date)
+    if not assignments:
+        raise HTTPException(
+            status_code=409,
+            detail="No student in this tenant to assign the lesson to.",
+        )
     await db.commit()
-    await db.refresh(new_task)
-    return new_task
+
+    created = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=assignments[0].id)
+    return TaskResponse(**_merge(created))
 
 @router.post("/bulk", response_model=List[TaskResponse])
-async def create_tasks_bulk(tasks: List[TaskCreate], db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_teacher)):
-    new_tasks = [Task(**t.model_dump()) for t in tasks]
-    db.add_all(new_tasks)
+async def create_tasks_bulk(tasks: List[TaskCreate], db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
+    first_ids = []
+    for t in tasks:
+        payload, scheduled_date = _split_payload(t)
+        lesson = Lesson(**payload, tenant_id=user.tenant_id)
+        db.add(lesson)
+        await db.flush()
+        assignments = await _assign_to_students(db, user.tenant_id, lesson, scheduled_date)
+        if not assignments:
+            raise HTTPException(
+                status_code=409,
+                detail="No student in this tenant to assign the lessons to.",
+            )
+        first_ids.append(assignments[0].id)
     await db.commit()
-    for t in new_tasks:
-        await db.refresh(t)
-    return new_tasks
+
+    out = []
+    for aid in first_ids:
+        a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=aid)
+        out.append(TaskResponse(**_merge(a)))
+    return out
 
 @router.get("/{id}", response_model=TaskResponse)
-async def get_task(id: int, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    result = await db.execute(select(Task).where(Task.id == id))
-    task = result.scalars().first()
-    if not task:
+async def get_task(id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    if not a:
         raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return TaskResponse(**_merge(a))
 
 @router.put("/{id}", response_model=TaskResponse)
-async def update_task(id: int, task_data: TaskUpdate, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_teacher)):
-    result = await db.execute(select(Task).where(Task.id == id))
-    task = result.scalars().first()
-    if not task:
+async def update_task(id: int, task_data: TaskUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
+    a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    if not a:
         raise HTTPException(status_code=404, detail="Task not found")
-    for key, value in task_data.model_dump().items():
-        setattr(task, key, value)
+
+    # Editing a "task" edits the underlying lesson — it is curriculum content.
+    # scheduled_date is the one field that belongs to this student's instance.
+    payload = task_data.model_dump()
+    scheduled_date = payload.pop('scheduled_date', None)
+    for key, value in payload.items():
+        if hasattr(a.lesson, key):
+            setattr(a.lesson, key, value)
+    a.scheduled_date = scheduled_date
+
     await db.commit()
-    await db.refresh(task)
-    return task
+    refreshed = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    return TaskResponse(**_merge(refreshed))
 
 @router.post("/{id}/complete", response_model=TaskResponse)
-async def complete_task(id: int, completion: TaskComplete, db: AsyncSession = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    result = await db.execute(select(Task).where(Task.id == id))
-    task = result.scalars().first()
-    if not task:
+async def complete_task(id: int, completion: TaskComplete, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
+    a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    if not a:
         raise HTTPException(status_code=404, detail="Task not found")
-    task.is_completed = True
-    task.actual_completion_date = date.today()
-    task.completion_notes = completion.completion_notes
-    task.focus_minutes = completion.focus_minutes
+
+    if a.is_completed:
+        raise HTTPException(status_code=409, detail="Already completed")
+
+    if a.scheduled_date is not None and a.scheduled_date > date.today():
+        raise HTTPException(status_code=409, detail="That task isn't unlocked yet")
+
+    a.is_completed = True
+    a.actual_completion_date = date.today()
+    a.completion_notes = completion.completion_notes
+    a.focus_minutes = completion.focus_minutes
+
+    # The XP belongs to whoever the work was assigned to, not to whoever
+    # clicked the button. A teacher marking work done credits the student.
+    await award_xp(
+        db,
+        tenant_id=a.tenant_id,
+        student_id=a.student_id,
+        delta=lesson_xp(a.lesson),
+        reason=f"Completed: {a.lesson.title}",
+        source_type=SOURCE_TYPE,
+        source_id=a.id,
+    )
+
     await db.commit()
-    await db.refresh(task)
-    return task
+    refreshed = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    return TaskResponse(**_merge(refreshed))
 
 @router.post("/{id}/uncomplete", response_model=TaskResponse)
-async def uncomplete_task(id: int, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_teacher)):
-    result = await db.execute(select(Task).where(Task.id == id))
-    task = result.scalars().first()
-    if not task:
+async def uncomplete_task(id: int, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
+    a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    if not a:
         raise HTTPException(status_code=404, detail="Task not found")
-    task.is_completed = False
-    task.actual_completion_date = None
-    task.completion_notes = ''
-    task.focus_minutes = 0
+
+    a.is_completed = False
+    a.actual_completion_date = None
+    a.completion_notes = ''
+    a.focus_minutes = 0
+
+    await reverse_xp_for_source(
+        db,
+        tenant_id=a.tenant_id,
+        source_type=SOURCE_TYPE,
+        source_id=a.id,
+        reason=f"Reverted: {a.lesson.title}",
+    )
+
     await db.commit()
-    await db.refresh(task)
-    return task
+    refreshed = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    return TaskResponse(**_merge(refreshed))
 
 @router.delete("/{id}")
-async def delete_task(id: int, db: AsyncSession = Depends(get_db), current_user: dict = Depends(require_teacher)):
-    result = await db.execute(select(Task).where(Task.id == id))
-    task = result.scalars().first()
-    if not task:
+async def delete_task(id: int, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
+    a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
+    if not a:
         raise HTTPException(status_code=404, detail="Task not found")
-    await db.delete(task)
+
+    lesson = a.lesson
+    # Reverse every student's award for this lesson before the cascade removes
+    # the assignments, or the XP outlives the work that earned it.
+    for sibling in await AssignmentRepository.list(db, tenant_id=user.tenant_id, unit_id=None):
+        if sibling.lesson_id == lesson.id:
+            await reverse_xp_for_source(
+                db,
+                tenant_id=user.tenant_id,
+                source_type=SOURCE_TYPE,
+                source_id=sibling.id,
+                reason=f"Deleted: {lesson.title}",
+            )
+
+    await db.delete(lesson)  # cascades to its assignments
     await db.commit()
     return {"message": "Task deleted"}

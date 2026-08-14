@@ -7,6 +7,7 @@ import ProgressBar from '../../components/common/ProgressBar.vue'
 import WeekStrip from '../../components/student/WeekStrip.vue'
 import KpiCard from '../../components/common/KpiCard.vue'
 import NotificationBar from '../../components/common/NotificationBar.vue'
+import { taskXp } from '../../utils/xp'
 
 const tasksStore = useTasksStore()
 let pollInterval = null
@@ -31,11 +32,11 @@ const estimatedTime = computed(() => {
 })
 
 const xpAvailable = computed(() => {
-  return tasksStore.pendingTasks.reduce((sum, t) => sum + (t.xp_reward || 0), 0)
+  return tasksStore.pendingTasks.reduce((sum, t) => sum + taskXp(t), 0)
 })
 
 const xpEarned = computed(() => {
-  return tasksStore.completedTasks.reduce((sum, t) => sum + (t.xp_reward || 0), 0)
+  return tasksStore.completedTasks.reduce((sum, t) => sum + taskXp(t), 0)
 })
 
 async function handleComplete({ id, notes, minutes }) {

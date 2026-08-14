@@ -4,14 +4,22 @@ import { api } from '../api/client'
 
 export const useTasksStore = defineStore('tasks', () => {
   const todayTasks = ref([])
+  const todayDate = ref(null)
   const allTasks = ref([])
   const loading = ref(false)
 
-  const pendingTasks = computed(() => todayTasks.value.filter(t => !t.is_completed))
-  const completedTasks = computed(() => todayTasks.value.filter(t => t.is_completed))
+  // Guarded so a shape change in the API degrades to an empty list instead of
+  // throwing inside a computed and blanking the whole view.
+  const pendingTasks = computed(() =>
+    Array.isArray(todayTasks.value) ? todayTasks.value.filter(t => !t.is_completed) : []
+  )
+  const completedTasks = computed(() =>
+    Array.isArray(todayTasks.value) ? todayTasks.value.filter(t => t.is_completed) : []
+  )
 
   const tasksBySubject = computed(() => {
     const grouped = {}
+    if (!Array.isArray(todayTasks.value)) return grouped
     todayTasks.value.forEach(task => {
       const course = task.course?.title || 'Other'
       if (!grouped[course]) grouped[course] = []
@@ -23,8 +31,10 @@ export const useTasksStore = defineStore('tasks', () => {
   async function fetchTodayTasks() {
     loading.value = true
     try {
+      // GET /api/tasks/today returns a StudentDayView: { date, tasks: [...] }
       const data = await api.get('/tasks/today')
-      if (data) todayTasks.value = data
+      todayTasks.value = Array.isArray(data?.tasks) ? data.tasks : []
+      todayDate.value = data?.date ?? null
     } finally {
       loading.value = false
     }
@@ -35,7 +45,7 @@ export const useTasksStore = defineStore('tasks', () => {
     try {
       const query = new URLSearchParams(filters).toString()
       const data = await api.get(`/tasks?${query}`)
-      if (data) allTasks.value = data
+      allTasks.value = Array.isArray(data) ? data : []
     } finally {
       loading.value = false
     }
@@ -56,5 +66,5 @@ export const useTasksStore = defineStore('tasks', () => {
     await fetchAllTasks()
   }
 
-  return { todayTasks, allTasks, loading, pendingTasks, completedTasks, tasksBySubject, fetchTodayTasks, fetchAllTasks, createTask, completeTask, deleteTask }
+  return { todayTasks, todayDate, allTasks, loading, pendingTasks, completedTasks, tasksBySubject, fetchTodayTasks, fetchAllTasks, createTask, completeTask, deleteTask }
 })

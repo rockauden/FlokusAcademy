@@ -1,42 +1,60 @@
 from datetime import date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.models import Course, Expense, User, SchoolEvent, Reward
+from app.models import Program, Expense, User, SchoolEvent, Reward
 from app.auth import hash_pin
 from app.config import settings
 
-async def seed_initial_data(db_session: AsyncSession):
-    # Always sync teacher PIN with current ADMIN_PIN env var
+async def seed_users(db_session: AsyncSession):
+    """Bootstrap the initial accounts.
+
+    ADMIN_PIN is only ever consulted when the teacher account does not yet
+    exist. Once the row is there the stored hash is authoritative, so a PIN
+    changed through the app survives restarts and redeploys.
+    """
     result = await db_session.execute(select(User).where(User.username == 'dad'))
-    existing_dad = result.scalars().first()
-    if existing_dad:
-        existing_dad.pin_hash = hash_pin(settings.ADMIN_PIN)
-        await db_session.commit()
+    if result.scalars().first() is None:
+        db_session.add(User(
+            username='dad',
+            display_name='Dad',
+            role='teacher',
+            pin_hash=hash_pin(settings.ADMIN_PIN.get_secret_value()),
+        ))
+
+    result = await db_session.execute(select(User).where(User.username == 'sonny'))
+    if result.scalars().first() is None:
+        db_session.add(User(
+            username='sonny',
+            display_name='Sonny',
+            role='student',
+            pin_hash=hash_pin(settings.STUDENT_PIN.get_secret_value()),
+        ))
+
+    await db_session.commit()
+
+
+async def seed_initial_data(db_session: AsyncSession):
+    await seed_users(db_session)
 
     # Seed default Rewards if none exist
     result = await db_session.execute(select(Reward))
     if not result.scalars().first():
         rewards_data = [
-            Reward(title="30 Min Screen Time", description="Play a video game or watch YouTube", xp_cost=50, emoji="🎮", category="Entertainment"),
-            Reward(title="1 Hour Screen Time", description="Double the game time", xp_cost=90, emoji="🕹️", category="Entertainment"),
-            Reward(title="Pick the Dinner", description="You get to choose what Dad cooks for dinner tonight", xp_cost=150, emoji="🍕", category="Privilege"),
-            Reward(title="Stay Up 30 Mins Late", description="Push bedtime back by 30 minutes", xp_cost=100, emoji="🌙", category="Privilege"),
-            Reward(title="Skip a Chore", description="Pass one of your daily chores to Dad", xp_cost=200, emoji="🧹", category="Privilege"),
-            Reward(title="Special Treat", description="Ice cream or a special snack of your choice", xp_cost=75, emoji="🍦", category="Snack")
+            Reward(name="30 Min Screen Time", description="Play a video game or watch YouTube", xp_cost=50, emoji="🎮", category="Entertainment"),
+            Reward(name="1 Hour Screen Time", description="Double the game time", xp_cost=90, emoji="🕹️", category="Entertainment"),
+            Reward(name="Pick the Dinner", description="You get to choose what Dad cooks for dinner tonight", xp_cost=150, emoji="🍕", category="Privilege"),
+            Reward(name="Stay Up 30 Mins Late", description="Push bedtime back by 30 minutes", xp_cost=100, emoji="🌙", category="Privilege"),
+            Reward(name="Skip a Chore", description="Pass one of your daily chores to Dad", xp_cost=200, emoji="🧹", category="Privilege"),
+            Reward(name="Special Treat", description="Ice cream or a special snack of your choice", xp_cost=75, emoji="🍦", category="Snack")
         ]
         db_session.add_all(rewards_data)
         await db_session.commit()
 
     # Check if courses already exist
-    result = await db_session.execute(select(Course))
+    result = await db_session.execute(select(Program))
     if result.scalars().first():
         return  # Data already seeded
-        
-    # Seed Users
-    dad = User(username='dad', display_name='Dad', role='teacher', pin_hash=hash_pin(settings.ADMIN_PIN))
-    sonny = User(username='sonny', display_name='Sonny', role='student', pin_hash=None)
-    db_session.add_all([dad, sonny])
-    
+
     # Seed First Day Event
     first_day = SchoolEvent(
         title="First Day of School",
@@ -48,15 +66,15 @@ async def seed_initial_data(db_session: AsyncSession):
     
     # Seed Courses
     courses_data = [
-        Course(title="Math — Beast Academy", subject_area="Math", platform="Beast Academy", platform_url="https://beastacademy.com/login", emoji="🧮", color_hex="#f59e0b", sort_order=1),
-        Course(title="Language Arts — Brave Writer", subject_area="ELA", platform="Brave Writer", platform_url="https://bravewriter.com/", emoji="✍️", color_hex="#a78bfa", sort_order=2),
-        Course(title="Social Studies — Tuttle Twins", subject_area="Social Studies", platform="Tuttle Twins", platform_url="https://tuttletwins.com/", emoji="🗺️", color_hex="#34d399", sort_order=3),
-        Course(title="Critical Thinking — Critical Thinking Co.", subject_area="Logic", platform="Critical Thinking Co.", platform_url="https://www.criticalthinking.com/", emoji="🧠", color_hex="#f472b6", sort_order=4),
-        Course(title="Logic — Brilliant.org", subject_area="Logic", platform="Brilliant.org", platform_url="https://brilliant.org/login", emoji="⚔️", color_hex="#60a5fa", sort_order=5),
-        Course(title="Strategy — Synthesis", subject_area="Logic", platform="Synthesis", platform_url="https://www.synthesis.com/", emoji="🤖", color_hex="#c084fc", sort_order=6),
-        Course(title="Strategy — Chess.com", subject_area="Logic", platform="Chess.com", platform_url="https://www.chess.com/login", emoji="♟️", color_hex="#fbbf24", sort_order=7),
-        Course(title="STEM — CrunchLabs", subject_area="Science", platform="CrunchLabs", platform_url="https://www.crunchlabs.com/", emoji="🧪", color_hex="#fb923c", sort_order=8),
-        Course(title="Electives — Outschool", subject_area="Science", platform="Outschool", platform_url="https://outschool.com/", emoji="🏫", color_hex="#38bdf8", sort_order=9)
+        Program(title="Math — Beast Academy", subject_area="Math", platform="Beast Academy", platform_url="https://beastacademy.com/login", emoji="🧮", color_hex="#f59e0b", sort_order=1),
+        Program(title="Language Arts — Brave Writer", subject_area="ELA", platform="Brave Writer", platform_url="https://bravewriter.com/", emoji="✍️", color_hex="#a78bfa", sort_order=2),
+        Program(title="Social Studies — Tuttle Twins", subject_area="Social Studies", platform="Tuttle Twins", platform_url="https://tuttletwins.com/", emoji="🗺️", color_hex="#34d399", sort_order=3),
+        Program(title="Critical Thinking — Critical Thinking Co.", subject_area="Logic", platform="Critical Thinking Co.", platform_url="https://www.criticalthinking.com/", emoji="🧠", color_hex="#f472b6", sort_order=4),
+        Program(title="Logic — Brilliant.org", subject_area="Logic", platform="Brilliant.org", platform_url="https://brilliant.org/login", emoji="⚔️", color_hex="#60a5fa", sort_order=5),
+        Program(title="Strategy — Synthesis", subject_area="Logic", platform="Synthesis", platform_url="https://www.synthesis.com/", emoji="🤖", color_hex="#c084fc", sort_order=6),
+        Program(title="Strategy — Chess.com", subject_area="Logic", platform="Chess.com", platform_url="https://www.chess.com/login", emoji="♟️", color_hex="#fbbf24", sort_order=7),
+        Program(title="STEM — CrunchLabs", subject_area="Science", platform="CrunchLabs", platform_url="https://www.crunchlabs.com/", emoji="🧪", color_hex="#fb923c", sort_order=8),
+        Program(title="Electives — Outschool", subject_area="Science", platform="Outschool", platform_url="https://outschool.com/", emoji="🏫", color_hex="#38bdf8", sort_order=9)
     ]
     db_session.add_all(courses_data)
     

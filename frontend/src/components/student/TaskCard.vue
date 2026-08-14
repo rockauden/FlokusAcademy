@@ -1,6 +1,7 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import FocusTimer from './FocusTimer.vue'
+import { taskXp } from '../../utils/xp'
 
 const props = defineProps({
   task: { type: Object, required: true }
@@ -9,6 +10,9 @@ const props = defineProps({
 const emit = defineEmits(['complete'])
 const expanded = ref(false)
 const notes = ref('')
+
+// What the ledger will actually award — doubled for boss fights.
+const xpValue = computed(() => taskXp(props.task))
 
 function handleComplete(minutes) {
   emit('complete', { id: props.task.id, notes: notes.value, minutes })
@@ -48,13 +52,13 @@ function handleComplete(minutes) {
           <textarea v-model="notes" rows="2" placeholder="What did you learn?"></textarea>
         </div>
         <button class="btn-success mt-md" style="width: 100%" @click="handleComplete(task.estimated_minutes)">
-          Mark Complete (+{{ task.xp_reward }} XP)
+          Mark Complete (+{{ xpValue }} XP)
         </button>
       </div>
     </div>
 
     <div v-if="task.is_completed" class="completed-badge">
-      ✓ Done (+{{ task.xp_reward }} XP)
+      ✓ Done (+{{ xpValue }} XP)
     </div>
   </div>
 </template>
