@@ -2,19 +2,36 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.database import async_session_maker, engine
+from app.database import async_session_maker, engine, get_db
 from app.rate_limit import limiter
 from app.services.retention import purge_old_chat_history
 
 from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students
 
 logger = logging.getLogger(__name__)
+
+
+async def _safe_rollback(session: AsyncSession) -> None:
+    """Roll back without ever raising.
+
+    Used only by the readiness probe. A rollback against a connection that has
+    already dropped can itself fail, and that would turn a deliberate 503 into
+    a 500 — losing exactly the diagnostic the endpoint exists to provide. This
+    is verified on SQLite locally; the failure mode it guards against is a
+    Postgres one, so it fails safe rather than relying on the local result.
+    """
+    try:
+        await session.rollback()
+    except Exception:
+        logger.debug("Rollback during readiness check failed", exc_info=True)
 
 
 async def _run_retention_purge() -> None:
@@ -74,4 +91,74 @@ app.include_router(students.router)
 
 @app.get("/health")
 async def health_check():
+    """Liveness. Deliberately does not touch the database.
+
+    railway.toml points healthcheckPath here with restartPolicyType =
+    "on_failure", so this has to stay a static literal: if it queried Postgres,
+    a transient connection blip would restart an otherwise healthy container
+    and turn a brief database hiccup into a crash loop. "Is the process
+    serving?" and "can it reach its dependencies?" are different questions with
+    different correct responses, which is why readiness is a separate endpoint.
+    """
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness_check(response: Response, db: AsyncSession = Depends(get_db)):
+    """Readiness — can this instance actually serve a request that needs data?
+
+    Also reports the applied Alembic revision. That is the useful part: it
+    makes migration state checkable from outside without shell access to the
+    database, which is exactly the gap that let production drift from the
+    migration chain unnoticed once already.
+
+    Returns 503 with a reason rather than raising, so a probe (or a human with
+    curl) gets the failure mode in the body instead of a bare 500.
+    """
+    # The two checks are deliberately separate. "Cannot reach the database" and
+    # "reached it but it has no migration state" are different failures with
+    # different fixes, and reporting them identically would have made the
+    # production schema drift harder to spot, not easier.
+    #
+    # Exception detail is the class name only: the full text can carry the
+    # connection string, credentials included, and this endpoint is public.
+    try:
+        # A hung database must not hang the probe — an unbounded wait here
+        # would make the readiness check itself a source of downtime.
+        async with asyncio.timeout(5):
+            await db.execute(text("SELECT 1"))
+    except Exception as exc:
+        logger.exception("Readiness check failed: database unreachable")
+        await _safe_rollback(db)
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "unavailable",
+            "database": "error",
+            "detail": type(exc).__name__,
+        }
+
+    try:
+        async with asyncio.timeout(5):
+            revision = (
+                await db.execute(text("SELECT version_num FROM alembic_version"))
+            ).scalar_one_or_none()
+    except Exception as exc:
+        # The table is absent: this database was never migrated. Distinct from
+        # the branch below, where the table exists but holds no row.
+        logger.exception("Readiness check failed: migration state unreadable")
+        await _safe_rollback(db)
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {
+            "status": "unavailable",
+            "database": "ok",
+            "migration": "unreadable",
+            "detail": type(exc).__name__,
+        }
+
+    if revision is None:
+        # Table present but empty — Alembic has never stamped it. A database in
+        # this state fails in confusing ways later, so it is not "ready".
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return {"status": "unavailable", "database": "ok", "migration": None}
+
+    return {"status": "ready", "database": "ok", "migration": revision}
