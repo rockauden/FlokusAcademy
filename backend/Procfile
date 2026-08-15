@@ -1,1 +1,3 @@
-web: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+# Kept in step with railway.toml's startCommand. See the comment there for why
+# --forwarded-allow-ips is required and why the '*' is quoted.
+web: uvicorn app.main:app --host 0.0.0.0 --port $PORT --forwarded-allow-ips='*'

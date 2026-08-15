@@ -3,6 +3,17 @@ builder = "railpack"
 buildCommand = "pip install -r requirements.txt"
 
 [deploy]
-startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"
+# --forwarded-allow-ips: Railway terminates TLS at its edge and forwards plain
+# HTTP to the container. uvicorn enables proxy_headers by default but only
+# trusts 127.0.0.1, so X-Forwarded-Proto was ignored and every generated URL
+# came out as http://. That broke each 307 slash-redirect: the browser refused
+# the https -> http hop as mixed content and the request never left the page.
+# The '*' is quoted so the shell cannot glob-expand it against the working
+# directory. Safe here because Railway's edge is the only route to this
+# container — it is not reachable directly.
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --forwarded-allow-ips='*'"
+# Liveness, not readiness: this path must not touch the database, or a brief
+# Postgres blip would trip restartPolicyType and crash-loop a healthy
+# container. Readiness lives at /health/ready.
 healthcheckPath = "/health"
 restartPolicyType = "on_failure"

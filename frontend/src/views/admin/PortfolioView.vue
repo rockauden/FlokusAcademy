@@ -6,8 +6,8 @@ const selectedDate = ref(new Date().toISOString().split('T')[0])
 const completedTasks = ref([])
 
 async function fetchPortfolio() {
-  // Use filter endpoint
-  const data = await api.get(`/tasks?is_completed=true&scheduled_date=${selectedDate.value}`)
+  // Use filter endpoint. Trailing slash avoids the 307 on /api/tasks/.
+  const data = await api.get(`/tasks/?is_completed=true&scheduled_date=${selectedDate.value}`)
   completedTasks.value = data || []
 }
 

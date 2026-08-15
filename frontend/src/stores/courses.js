@@ -9,7 +9,7 @@ export const useCoursesStore = defineStore('courses', () => {
   async function fetchCourses() {
     loading.value = true
     try {
-      const data = await api.get('/courses')
+      const data = await api.get('/courses/')
       if (data) courses.value = data
     } finally {
       loading.value = false

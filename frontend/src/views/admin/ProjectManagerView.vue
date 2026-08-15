@@ -6,13 +6,13 @@ const projects = ref([])
 const form = ref({ title: '', platform: '', xp_bounty: 100 })
 
 async function fetchProjects() {
-  projects.value = await api.get('/projects') || []
+  projects.value = await api.get('/projects/') || []
 }
 
 onMounted(fetchProjects)
 
 async function createProject() {
-  await api.post('/projects', form.value)
+  await api.post('/projects/', form.value)
   form.value = { title: '', platform: '', xp_bounty: 100 }
   await fetchProjects()
 }

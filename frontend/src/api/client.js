@@ -116,11 +116,33 @@ async function performRequest(endpoint, options, isRetry) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    // FastAPI uses `detail`; slowapi's rate-limit response uses `error`.
-    throw new Error(data.detail || data.error || 'API request failed')
+    throw new Error(describeError(data))
   }
 
   return data
+}
+
+// FastAPI uses `detail`; slowapi's rate-limit response uses `error`. For a 422
+// `detail` is an array of objects, and passing that to Error() renders the
+// useless string "[object Object]" — which is what a rejected task looked like
+// from the UI. Turn it into the field and reason instead.
+function describeError(data) {
+  const detail = data.detail
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        // loc is like ["body", "scheduled_date"]; the last entry is the field.
+        const field = Array.isArray(item.loc) ? item.loc[item.loc.length - 1] : null
+        const message = item.msg || 'is invalid'
+        return field ? `${field}: ${message}` : message
+      })
+      .join('; ')
+  }
+
+  if (typeof detail === 'string') return detail
+  if (detail) return JSON.stringify(detail)
+  return data.error || 'API request failed'
 }
 
 // Thin wrapper so a retried request is logged once, not once per attempt.

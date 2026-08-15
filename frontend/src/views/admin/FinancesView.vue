@@ -10,13 +10,13 @@ const showForm = ref(false)
 
 async function fetchData() {
   summary.value = await api.get('/expenses/summary')
-  expenses.value = await api.get('/expenses') || []
+  expenses.value = await api.get('/expenses/') || []
 }
 
 onMounted(fetchData)
 
 async function handleCreate(data) {
-  await api.post('/expenses', data)
+  await api.post('/expenses/', data)
   showForm.value = false
   await fetchData()
 }

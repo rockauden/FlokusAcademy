@@ -19,13 +19,13 @@ const categories = [
 ]
 
 async function fetchEvents() {
-  events.value = await api.get('/events') || []
+  events.value = await api.get('/events/') || []
 }
 
 onMounted(fetchEvents)
 
 async function submitEvent() {
-  await api.post('/events', form.value)
+  await api.post('/events/', form.value)
   showForm.value = false
   await fetchEvents()
 }

@@ -7,7 +7,7 @@ const events = ref([])
 const nextMajor = ref(null)
 
 onMounted(async () => {
-  events.value = await api.get('/events') || []
+  events.value = await api.get('/events/') || []
   nextMajor.value = await api.get('/events/next-major') || null
 })
 

@@ -21,8 +21,34 @@ const form = ref(props.initialData || {
   medium: 'online'
 })
 
+const error = ref('')
+
+// Blank inputs come out of the DOM as '', but the API types these as
+// Optional[date] / Optional[int] — '' is not a valid empty value for either
+// and fails validation with a 422. Leaving the date blank is the normal case
+// for a quick add, so this has to be normalised before sending.
+const NULL_WHEN_BLANK = ['scheduled_date', 'school_day_offset', 'day_of_week_hint']
+
 function submit() {
-  emit('submit', form.value)
+  // course_id is required by the API, and title is only marked required in
+  // markup, which does nothing outside a real form submit. Catch both here so
+  // the user gets a plain answer instead of a server validation error.
+  if (!form.value.title || !String(form.value.title).trim()) {
+    error.value = 'Give the task a title.'
+    return
+  }
+  if (form.value.course_id === '' || form.value.course_id === null) {
+    error.value = 'Choose a course for this task.'
+    return
+  }
+
+  const payload = { ...form.value }
+  for (const key of NULL_WHEN_BLANK) {
+    if (payload[key] === '') payload[key] = null
+  }
+
+  error.value = ''
+  emit('submit', payload)
 }
 </script>
 
@@ -99,6 +125,8 @@ function submit() {
       </label>
     </div>
 
+    <p v-if="error" class="form-error">{{ error }}</p>
+
     <div class="actions mt-lg">
       <button class="btn-primary" @click="submit">Save Task</button>
       <button class="btn-ghost" @click="$emit('cancel')">Cancel</button>
@@ -107,6 +135,11 @@ function submit() {
 </template>
 
 <style scoped>
+.form-error {
+  color: var(--color-danger, #e05252);
+  margin-top: var(--space-md);
+}
+
 .form-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

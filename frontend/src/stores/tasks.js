@@ -44,7 +44,9 @@ export const useTasksStore = defineStore('tasks', () => {
     loading.value = true
     try {
       const query = new URLSearchParams(filters).toString()
-      const data = await api.get(`/tasks?${query}`)
+      // Trailing slash matters: the route is /api/tasks/, and without it
+      // FastAPI answers with a 307 to an absolute URL. See createTask.
+      const data = await api.get(`/tasks/?${query}`)
       allTasks.value = Array.isArray(data) ? data : []
     } finally {
       loading.value = false
@@ -52,7 +54,12 @@ export const useTasksStore = defineStore('tasks', () => {
   }
 
   async function createTask(data) {
-    await api.post('/tasks', data)
+    // The route is /api/tasks/ — posting to /api/tasks returns a 307 whose
+    // Location is absolute. Behind a TLS-terminating proxy that redirect came
+    // back as http://, and the browser blocked the downgrade as mixed content,
+    // so quick add silently did nothing. The proxy header fix is the real
+    // remedy; the slash means there is no redirect to get wrong at all.
+    await api.post('/tasks/', data)
     await fetchTodayTasks()
   }
 
