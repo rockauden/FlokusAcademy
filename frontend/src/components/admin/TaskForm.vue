@@ -7,6 +7,18 @@ const props = defineProps({
 })
 const emit = defineEmits(['submit', 'cancel'])
 
+/**
+ * Local date as YYYY-MM-DD. Deliberately not toISOString().slice(0, 10),
+ * which converts to UTC first and so returns the wrong day for anyone west of
+ * Greenwich for part of the evening.
+ */
+function todayISO() {
+  const now = new Date()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${now.getFullYear()}-${month}-${day}`
+}
+
 const form = ref(props.initialData || {
   title: '',
   course_id: '',
@@ -17,7 +29,13 @@ const form = ref(props.initialData || {
   workbook_pages: '',
   xp_reward: 10,
   is_boss_fight: false,
-  scheduled_date: '',
+  // Defaults to today so a quick-added task actually reaches the student.
+  // The student's day selects on `scheduled_date <= today`, and in SQL
+  // `NULL <= today` is NULL rather than true — so an undated assignment is
+  // silently excluded from their list forever while still showing in every
+  // admin view. Clearing the field is still allowed and still means
+  // "authored but not scheduled yet"; it just is not the default.
+  scheduled_date: todayISO(),
   medium: 'online'
 })
 
