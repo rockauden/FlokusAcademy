@@ -18,7 +18,7 @@ const crashed = ref(false)
  */
 function isApiFailure(error) {
   if (!error) return false
-  if (error.requestId || typeof error.status === 'number') return true
+  if (error.sessionExpired || error.requestId || typeof error.status === 'number') return true
   return error instanceof TypeError && /fetch|network/i.test(error.message || '')
 }
 
@@ -26,10 +26,15 @@ onErrorCaptured((error) => {
   const apiFailure = isApiFailure(error)
   console.error(apiFailure ? 'API error reached the boundary:' : 'Render error captured:', error)
 
-  errors.report(
-    error?.message || 'Something went wrong while drawing this page.',
-    { requestId: error?.requestId, fatal: !apiFailure },
-  )
+  // An expired session is already handled: the user is being sent to the login
+  // page, which explains itself. A toast on top of that is noise, and the
+  // crash screen would be actively wrong.
+  if (!error?.sessionExpired) {
+    errors.report(
+      error?.message || 'Something went wrong while drawing this page.',
+      { requestId: error?.requestId, fatal: !apiFailure },
+    )
+  }
 
   if (!apiFailure) {
     crashed.value = true

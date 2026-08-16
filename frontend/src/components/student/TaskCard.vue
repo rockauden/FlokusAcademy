@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import FocusTimer from './FocusTimer.vue'
 import { taskXp } from '../../utils/xp'
 
@@ -11,17 +11,40 @@ const emit = defineEmits(['complete'])
 const expanded = ref(false)
 const notes = ref('')
 
+// Acknowledges the tap immediately, rather than leaving the card inert until
+// the request returns and the list happens to re-render. On a slow tablet
+// connection that gap is long enough to make a child tap again.
+const settling = ref(false)
+
 // What the ledger will actually award — doubled for boss fights.
 const xpValue = computed(() => taskXp(props.task))
 
+let recovery = null
+
 function handleComplete(minutes) {
+  if (settling.value) return   // A second tap must not award twice.
+
+  settling.value = true
+  // Deliberately stays expanded. Collapsing here unmounts the button along
+  // with the rest of the body, so the acknowledgement would never be seen --
+  // the card would just go quiet. It is about to leave the list anyway.
   emit('complete', { id: props.task.id, notes: notes.value, minutes })
-  expanded.value = false
+
+  // If the card is still mounted a few seconds later, the completion did not
+  // land. The failure itself surfaces as a toast; this is what stops the card
+  // sitting permanently disabled with no way to try again.
+  clearTimeout(recovery)
+  recovery = setTimeout(() => { settling.value = false }, 6000)
 }
+
+onUnmounted(() => clearTimeout(recovery))
 </script>
 
 <template>
-  <div class="task-card" :class="{ 'boss': task.is_boss_fight, 'completed': task.is_completed }">
+  <div
+    class="task-card"
+    :class="{ 'boss': task.is_boss_fight, 'completed': task.is_completed, 'settling': settling }"
+  >
     <div class="task-header" @click="!task.is_completed && (expanded = !expanded)">
       <div class="title-section">
         <span class="emoji">{{ task.course?.emoji || '📝' }}</span>
@@ -51,8 +74,13 @@ function handleComplete(minutes) {
           <label>Notes (optional)</label>
           <textarea v-model="notes" rows="2" placeholder="What did you learn?"></textarea>
         </div>
-        <button class="btn-success mt-md" style="width: 100%" @click="handleComplete(task.estimated_minutes)">
-          Mark Complete (+{{ xpValue }} XP)
+        <button
+          class="btn-success mt-md"
+          style="width: 100%"
+          :disabled="settling"
+          @click="handleComplete(task.estimated_minutes)"
+        >
+          {{ settling ? 'Nice work!' : `Mark Complete (+${xpValue} XP)` }}
         </button>
       </div>
     </div>
@@ -100,5 +128,24 @@ function handleComplete(minutes) {
   color: var(--accent-green);
   font-weight: 600;
   font-size: 0.875rem;
+}
+
+/* The settle: a single confirming pulse, not a bounce. The card is about to
+   leave the list, so this reads as "received" rather than as an effect. */
+.task-card.settling {
+  border-color: var(--accent-green);
+  box-shadow: 0 0 0 1px var(--accent-green), 0 0 22px rgb(34 197 94 / 22%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .task-card.settling {
+    animation: settle 420ms ease-out;
+  }
+
+  @keyframes settle {
+    0%   { transform: scale(1); }
+    35%  { transform: scale(1.015); }
+    100% { transform: scale(1); }
+  }
 }
 </style>

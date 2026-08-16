@@ -107,6 +107,27 @@ test.describe('errors are visible, not silent', () => {
     await expect(page.locator('.task-form, .admin-layout')).not.toHaveCount(0)
   })
 
+  test('an expired session shows no crash screen and no toast', async ({ page }) => {
+    // Regression: the session-expired error was thrown bare, so the boundary
+    // could not tell it from a render failure and put the crash screen over an
+    // entirely ordinary redirect to the login page. Caught as a flake first --
+    // it only surfaced when the expiry happened to land during a render.
+    await login(page, 'teacher')
+    await page.goto('/admin/tasks')
+
+    await page.evaluate(async () => {
+      const { api } = await import('/src/api/client.js')
+      const { useAuthStore } = await import('/src/stores/auth.js')
+      await useAuthStore().logout()
+      localStorage.setItem('token', 'eyJhbGciOiJIUzI1NiJ9.stale.sig')
+      try { await api.get('/tasks/') } catch { /* expected */ }
+    })
+
+    await expect(page).toHaveURL(/\/login/)
+    await expect(page.locator('.crash')).toHaveCount(0)
+    await expect(page.locator('.error-toasts')).toHaveCount(0)
+  })
+
   test('repeated identical failures collapse instead of stacking', async ({ page }) => {
     await login(page, 'teacher')
     await page.goto('/admin/tasks')

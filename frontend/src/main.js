@@ -34,8 +34,9 @@ window.addEventListener('unhandledrejection', (event) => {
   const reason = event.reason
   console.error('Unhandled rejection:', reason)
   // An expired session already redirects to /login and explains itself; a
-  // toast on top of that is noise.
-  if (reason?.message && /session has expired/i.test(reason.message)) return
+  // toast on top of that is noise. Matched on the flag the client sets rather
+  // than on the message text, which would break the moment the wording changed.
+  if (reason?.sessionExpired) return
   errors.report(reason?.message || 'Something went wrong.', { requestId: reason?.requestId })
 })
 

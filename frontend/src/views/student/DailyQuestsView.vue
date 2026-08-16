@@ -6,6 +6,7 @@ import TaskCard from '../../components/student/TaskCard.vue'
 import ProgressBar from '../../components/common/ProgressBar.vue'
 import WeekStrip from '../../components/student/WeekStrip.vue'
 import KpiCard from '../../components/common/KpiCard.vue'
+import CelebrationBurst from '../../components/student/CelebrationBurst.vue'
 import NotificationBar from '../../components/common/NotificationBar.vue'
 import { taskXp } from '../../utils/xp'
 
@@ -73,8 +74,20 @@ const streakSubtitle = computed(() => {
   return 'Keep it up!'
 })
 
+const burst = ref(null)
+
 async function handleComplete({ id, notes, minutes }) {
+  // Read the task before the refetch removes it from the pending list.
+  const finished = tasksStore.todayTasks.find((t) => t.id === id)
+
+  // Fire immediately rather than after the round trip: the celebration belongs
+  // to the tap, and delaying it by a network request makes it feel like the
+  // server congratulating you rather than the work being done.
+  burst.value?.fire({ boss: !!finished?.is_boss_fight })
+
   await tasksStore.completeTask(id, notes, minutes)
+  // XP and the strip both move when a task lands.
+  await loadActivity()
 }
 </script>
 
@@ -88,8 +101,9 @@ async function handleComplete({ id, notes, minutes }) {
     </header>
 
     <div class="kpi-row">
+      <!-- No count-up on this one: "3/7" is not a quantity to count toward. -->
       <KpiCard icon="🎯" :value="`${completedCount}/${totalTasks}`" label="Tasks Done" color="blue" />
-      <KpiCard icon="⭐" :value="xpEarned" label="XP Earned Today" color="gold" />
+      <KpiCard icon="⭐" :value="xpEarned" label="XP Earned Today" color="gold" count-up />
       <!--
         Real, from /analytics/activity. Counts consecutive finished school days
         rather than calendar days, so a weekend does not reset it, and an
@@ -134,6 +148,8 @@ async function handleComplete({ id, notes, minutes }) {
         </transition-group>
       </div>
     </div>
+
+    <CelebrationBurst ref="burst" />
   </div>
 </template>
 
@@ -157,11 +173,40 @@ async function handleComplete({ id, notes, minutes }) {
   padding-bottom: var(--space-xs);
 }
 
-.list-enter-active, .list-leave-active {
-  transition: all 0.5s ease;
+/* A finished card leaves to the right and shrinks slightly, as though it has
+   been filed away; new work arrives from the left. The old rule sent both the
+   same direction, so completing a task looked identical to one appearing.
+   list-move is what keeps the remaining cards from snapping up into the gap. */
+.list-enter-active,
+.list-leave-active,
+.list-move {
+  transition: transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.42s ease;
 }
-.list-enter-from, .list-leave-to {
+.list-enter-from {
   opacity: 0;
-  transform: translateX(-30px);
+  transform: translateX(-24px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateX(28px) scale(0.97);
+}
+/* Taken out of flow while leaving, so the cards below close the gap smoothly
+   instead of jumping once the element is finally removed. */
+.list-leave-active {
+  position: absolute;
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-enter-active,
+  .list-leave-active,
+  .list-move {
+    transition: none;
+  }
+  .list-enter-from,
+  .list-leave-to {
+    opacity: 0;
+    transform: none;
+  }
 }
 </style>

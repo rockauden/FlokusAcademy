@@ -63,6 +63,21 @@ function endSession() {
   handlers.onExpired()
 }
 
+/**
+ * The error thrown when a session cannot be recovered.
+ *
+ * Tagged rather than thrown bare, because callers need to tell it apart from a
+ * programming error. Untagged, it reached the app's error boundary looking like
+ * a render failure and put the crash screen up over what is a completely
+ * ordinary event -- the user is already being redirected to the login page.
+ */
+function sessionExpiredError() {
+  const error = new Error('Your session has expired. Please log in again.')
+  error.status = 401
+  error.sessionExpired = true
+  return error
+}
+
 async function performRequest(endpoint, options, isRetry) {
   const token = localStorage.getItem('token')
   const headers = {
@@ -97,14 +112,14 @@ async function performRequest(endpoint, options, isRetry) {
       // Already replayed once with a freshly minted token and still refused.
       // The session is genuinely gone — stop rather than loop.
       endSession()
-      throw new Error('Your session has expired. Please log in again.')
+      throw sessionExpiredError()
     }
 
     try {
       await refreshSession()
     } catch {
       endSession()
-      throw new Error('Your session has expired. Please log in again.')
+      throw sessionExpiredError()
     }
 
     // Replay once. options.body is already a JSON string, so it is safe to

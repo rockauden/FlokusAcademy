@@ -1,11 +1,22 @@
 <script setup>
-defineProps({
+import { computed, toRef } from 'vue'
+import { useCountUp } from '../../composables/useCountUp'
+
+const props = defineProps({
   icon: String,
   value: [String, Number],
   label: String,
   subtitle: String,
-  color: { type: String, default: 'blue' }
+  color: { type: String, default: 'blue' },
+  // Off for cards whose value is not a plain quantity -- "3/7" counts nothing.
+  countUp: { type: Boolean, default: false }
 })
+
+const counted = useCountUp(toRef(props, 'value'))
+
+// Only take the animated value when it is actually meaningful; otherwise the
+// raw prop passes straight through untouched.
+const shown = computed(() => (props.countUp ? counted.value : props.value))
 </script>
 
 <template>
@@ -14,7 +25,7 @@ defineProps({
       <span class="icon">{{ icon }}</span>
     </div>
     <div class="kpi-content">
-      <div class="value" :style="{ color: `var(--accent-${color})` }">{{ value }}</div>
+      <div class="value" :style="{ color: `var(--accent-${color})` }">{{ shown }}</div>
       <div class="label">{{ label }}</div>
       <div v-if="subtitle" class="subtitle">{{ subtitle }}</div>
     </div>
@@ -32,6 +43,9 @@ defineProps({
   font-size: 2rem;
   font-weight: 700;
   line-height: 1.2;
+  /* Digits change width as they count; tabular figures stop the label and card
+     jittering sideways while that happens. */
+  font-variant-numeric: tabular-nums;
 }
 .label {
   color: var(--text-secondary);
