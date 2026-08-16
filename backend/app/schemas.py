@@ -257,6 +257,16 @@ class ActivityResponse(BaseModel):
     days: List[DayActivity]
     streak: int
 
+# --- Getting stuck ---
+class StuckFlagResponse(BaseModel):
+    id: int
+    student_id: int
+    session_id: str
+    topic: str
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
 # --- Safety ---
 class SafetyEventResponse(BaseModel):
     id: int

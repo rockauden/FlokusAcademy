@@ -8,7 +8,7 @@ from typing import List
 from google import genai
 from app.database import get_db
 from app.schemas import ChatMessageResponse
-from app.models import ChatMessage, SafetyEvent, User
+from app.models import ChatMessage, SafetyEvent, StuckFlag, User
 from app.auth import get_current_active_user
 from app.config import settings
 from app.repository import ChatRepository
@@ -58,6 +58,78 @@ PERSONAS = {
 def _is_student_message(sender: str) -> bool:
     """Tolerates rows written before senders became role-based."""
     return sender in (SENDER_STUDENT, "Sonny")
+
+
+# The one tool Floki can call. Described in terms of what the student is
+# experiencing rather than what the system does, because that is what the model
+# has to recognise -- it never sees the parent's screen.
+FLAG_STUCK_TOOL = {
+    "name": "flag_stuck",
+    "description": (
+        "Let the student's dad know they are stuck and could use help in person. "
+        "Call this when the student has tried something and it is not working, "
+        "says they do not understand after an explanation, is going in circles, "
+        "or is getting frustrated with a piece of schoolwork. Do not call it for "
+        "an ordinary first question -- being asked something is not being stuck. "
+        "Keep helping after calling it; this asks for a person as well, not instead."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "topic": {
+                "type": "string",
+                "description": (
+                    "What they are stuck on, in a few words, specific enough for "
+                    "their dad to sit down and help. For example 'dividing "
+                    "fractions by whole numbers' rather than 'maths'."
+                ),
+            }
+        },
+        "required": ["topic"],
+    },
+}
+
+# Cap on how much the model may write into the flag; the column is 200.
+TOPIC_LIMIT = 200
+
+
+async def _record_stuck_flag(db: AsyncSession, user: User, session_id: str, topic: str) -> None:
+    """Persist a flag, ignoring a repeat for the same topic in one session.
+
+    Without the de-duplication a long struggle produces a flag per turn, and a
+    parent opening the dashboard to eleven notices about one worksheet learns
+    less than they would from one.
+    """
+    cleaned = (topic or "").strip()[:TOPIC_LIMIT] or "schoolwork"
+
+    existing = await db.execute(
+        select(StuckFlag).where(
+            StuckFlag.tenant_id == user.tenant_id,
+            StuckFlag.student_id == user.id,
+            StuckFlag.session_id == session_id,
+            StuckFlag.topic == cleaned,
+            StuckFlag.resolved_at.is_(None),
+        )
+    )
+    if existing.scalars().first():
+        return
+
+    db.add(StuckFlag(
+        tenant_id=user.tenant_id,
+        student_id=user.id,
+        session_id=session_id,
+        topic=cleaned,
+    ))
+    logger.info("Stuck flag raised (student=%s, session=%s, topic=%r)", user.id, session_id, cleaned)
+
+
+def _tool_calls(response) -> list:
+    """Function calls in a response, tolerating SDK shapes that lack them."""
+    try:
+        calls = response.function_calls
+    except AttributeError:
+        return []
+    return list(calls or [])
 
 
 async def _messages_sent_today(db: AsyncSession, user: User) -> int:
@@ -176,23 +248,63 @@ async def chat_with_ai(
         contents.append({"role": role, "parts": [{"text": h.message}]})
     contents.append({"role": "user", "parts": [{"text": message}]})
 
+    config = genai.types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        max_output_tokens=500,
+        tools=[{"function_declarations": [FLAG_STUCK_TOOL]}],
+    )
+
+    flagged_topic = None
+
     try:
         # The async client keeps the model call off the event loop thread; the
         # timeout stops a hung upstream from holding a connection open forever.
-        async with asyncio.timeout(20):
+        # The whole exchange, including a tool round trip, sits inside it.
+        async with asyncio.timeout(25):
             response = await client.aio.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    max_output_tokens=500,
-                )
+                model="gemini-2.0-flash", contents=contents, config=config
             )
+
+            calls = _tool_calls(response)
+            if calls:
+                # Record the flag, then hand the result back so the model can
+                # finish its reply. Only flag_stuck is honoured -- an unknown
+                # name is answered rather than executed, so a model that
+                # hallucinates a tool cannot make anything happen here.
+                contents.append({"role": "model", "parts": [
+                    {"function_call": {"name": call.name, "args": dict(call.args or {})}}
+                    for call in calls
+                ]})
+
+                results = []
+                for call in calls:
+                    if call.name == "flag_stuck":
+                        topic = dict(call.args or {}).get("topic", "")
+                        await _record_stuck_flag(db, user, session_id, topic)
+                        flagged_topic = topic
+                        outcome = {"ok": True, "note": "Dad has been told. Keep helping."}
+                    else:
+                        logger.warning("Floki requested unknown tool %r", call.name)
+                        outcome = {"ok": False, "note": "No such tool."}
+                    results.append({"function_response": {"name": call.name, "response": outcome}})
+
+                contents.append({"role": "user", "parts": results})
+
+                response = await client.aio.models.generate_content(
+                    model="gemini-2.0-flash", contents=contents, config=config
+                )
+
         ai_text = response.text
+        # A turn that only called a tool can come back with no prose at all.
+        if not ai_text:
+            ai_text = (
+                "That is a tricky one - I have let your dad know you could use a hand. "
+                "Let's keep going in the meantime."
+            )
     except TimeoutError:
         # Upstream detail goes to the logs, never to the child's screen — the
         # SDK's error text can carry internal endpoints and key fragments.
-        logger.warning("Gemini call timed out after 20s (session=%s)", session_id)
+        logger.warning("Gemini call timed out after 25s (session=%s)", session_id)
         ai_text = "Sorry, that one took me too long to think about. Please try again."
     except Exception:
         logger.exception("Gemini call failed (session=%s)", session_id)
@@ -207,6 +319,8 @@ async def chat_with_ai(
         message=ai_text,
     )
     db.add(ai_msg)
+    # Commits the flag alongside the reply: the two are one event, and a flag
+    # without the message that caused it would leave the parent no context.
     await db.commit()
 
-    return {"message": ai_text}
+    return {"message": ai_text, "flagged_stuck": flagged_topic}

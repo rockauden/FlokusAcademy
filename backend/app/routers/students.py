@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from typing import List
 
 from app.database import get_db
-from app.models import Assignment, ChatMessage, ConsentRecord, Lesson, SafetyEvent, User, XPLedger
+from app.models import Assignment, ChatMessage, ConsentRecord, Lesson, SafetyEvent, StuckFlag, User, XPLedger
 from app.auth import require_teacher_user
-from app.schemas import ConsentRecordCreate, ConsentRecordResponse, SafetyEventResponse
+from app.schemas import ConsentRecordCreate, ConsentRecordResponse, SafetyEventResponse, StuckFlagResponse
 
 router = APIRouter(prefix="/api/students", tags=["students"])
 
@@ -119,6 +119,14 @@ async def export_student_data(
         )
     ).scalars().all()
 
+    stuck_flags = (
+        await db.execute(
+            select(StuckFlag)
+            .where(StuckFlag.tenant_id == user.tenant_id, StuckFlag.student_id == student.id)
+            .order_by(StuckFlag.created_at)
+        )
+    ).scalars().all()
+
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "student": {
@@ -182,6 +190,16 @@ async def export_student_data(
             }
             for s in safety_events
         ],
+        "stuck_flags": [
+            {
+                "id": f.id,
+                "session_id": f.session_id,
+                "topic": f.topic,
+                "created_at": f.created_at,
+                "resolved_at": f.resolved_at,
+            }
+            for f in stuck_flags
+        ],
     }
 
 
@@ -211,6 +229,8 @@ async def delete_student_data(
         # fail outright rather than merely leaving stray rows.
         ("safety_events", delete(SafetyEvent).where(
             SafetyEvent.tenant_id == user.tenant_id, SafetyEvent.student_id == student.id)),
+        ("stuck_flags", delete(StuckFlag).where(
+            StuckFlag.tenant_id == user.tenant_id, StuckFlag.student_id == student.id)),
         ("xp_ledger", delete(XPLedger).where(
             XPLedger.tenant_id == user.tenant_id, XPLedger.student_id == student.id)),
         ("assignments", delete(Assignment).where(
@@ -270,3 +290,48 @@ async def acknowledge_safety_event(
     await db.commit()
     await db.refresh(event)
     return event
+
+
+@router.get("/stuck-flags", response_model=List[StuckFlagResponse])
+async def list_stuck_flags(
+    unresolved_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_user),
+):
+    """Times the tutor judged the student to be stuck, newest first.
+
+    Kept apart from the safety alerts on purpose. Struggling with fractions and
+    disclosing that someone is hurting you are not the same news, and mixing
+    them would cost the safety banner the weight it needs to keep.
+    """
+    query = select(StuckFlag).where(StuckFlag.tenant_id == user.tenant_id)
+    if unresolved_only:
+        query = query.where(StuckFlag.resolved_at.is_(None))
+    # id breaks ties: created_at is second-precision on SQLite, so two flags in
+    # the same second would otherwise come back in an unstable order.
+    result = await db.execute(query.order_by(StuckFlag.created_at.desc(), StuckFlag.id.desc()))
+    return result.scalars().all()
+
+
+@router.post("/stuck-flags/{id}/resolve", response_model=StuckFlagResponse)
+async def resolve_stuck_flag(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_user),
+):
+    """Mark that the parent has helped. Kept, not deleted -- three flags on one
+    topic in a week is the useful signal, and it vanishes if each is erased."""
+    result = await db.execute(
+        select(StuckFlag).where(
+            StuckFlag.tenant_id == user.tenant_id,
+            StuckFlag.id == id,
+        )
+    )
+    flag = result.scalars().first()
+    if not flag:
+        raise HTTPException(status_code=404, detail="Stuck flag not found")
+
+    flag.resolved_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(flag)
+    return flag

@@ -1,6 +1,7 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
 import SafetyAlertBanner from '../components/admin/SafetyAlertBanner.vue'
+import StuckFlagStrip from '../components/admin/StuckFlagStrip.vue'
 
 const authStore = useAuthStore()
 
@@ -46,6 +47,7 @@ function logout() {
       </header>
       <main class="main-content">
         <SafetyAlertBanner />
+        <StuckFlagStrip />
         <router-view />
       </main>
     </div>

@@ -268,6 +268,29 @@ class SafetyEvent(Base):
     # Null until the parent marks it seen; this is what drives the unread count.
     acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
+class StuckFlag(Base):
+    """Raised when the tutor understands the student to be stuck on something.
+
+    Deliberately NOT a SafetyEvent. Being stuck on long division and disclosing
+    that someone is hurting you are not the same kind of news, and putting them
+    in one list would blunt the one that must never be missed. A parent should
+    be able to glance at the safety banner and know that anything in it is
+    serious.
+
+    Resolved rather than deleted, so "he got stuck on fractions three times
+    this week" stays visible -- that pattern is the genuinely useful signal,
+    and it is invisible if each flag disappears once acknowledged.
+    """
+    __tablename__ = 'stuck_flags'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # What the tutor understood the difficulty to be, in its words.
+    topic: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 class AppConfig(Base):
     __tablename__ = 'app_config'
     key: Mapped[str] = mapped_column(String, primary_key=True)
