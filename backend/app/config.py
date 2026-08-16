@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     # Refresh tokens live in an HttpOnly cookie and are rotated on every use.
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # Rate limits, in slowapi's syntax. Tunable per environment because the
+    # end-to-end suite signs in many times in quick succession from a single
+    # address and would otherwise throttle itself. The defaults are the
+    # production values — nothing has to be set for those to apply.
+    LOGIN_RATE_LIMIT: str = "5/minute"
+    REFRESH_RATE_LIMIT: str = "30/minute"
+
     # Secure cookies require HTTPS. Set false for plain-http local development.
     COOKIE_SECURE: bool = True
 

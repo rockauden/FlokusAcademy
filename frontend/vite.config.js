@@ -7,7 +7,9 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // Overridable so the end-to-end suite can point at its own throwaway
+        // API without colliding with a dev backend already on 8000.
+        target: process.env.VITE_PROXY_TARGET || 'http://localhost:8000',
         changeOrigin: true
       }
     }

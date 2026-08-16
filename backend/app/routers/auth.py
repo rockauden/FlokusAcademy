@@ -17,6 +17,7 @@ from app.auth import (
     set_refresh_cookie,
     verify_pin,
 )
+from app.config import settings
 from app.rate_limit import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -39,7 +40,7 @@ async def _issue_session(response: Response, db: AsyncSession, user: User) -> To
 # address from a parameter that must be named `request` and be a Starlette
 # Request, so the two cannot share the name.
 @router.post("/login", response_model=TokenResponse)
-@limiter.limit("5/minute")
+@limiter.limit(settings.LOGIN_RATE_LIMIT)
 async def login(request: Request, response: Response, credentials: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == credentials.username))
     user = result.scalars().first()
@@ -61,7 +62,7 @@ async def login(request: Request, response: Response, credentials: LoginRequest,
 
 
 @router.post("/refresh", response_model=TokenResponse)
-@limiter.limit("30/minute")
+@limiter.limit(settings.REFRESH_RATE_LIMIT)
 async def refresh_session(
     request: Request,
     response: Response,

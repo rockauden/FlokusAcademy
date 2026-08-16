@@ -10,7 +10,11 @@ export const useCoursesStore = defineStore('courses', () => {
     loading.value = true
     try {
       const data = await api.get('/courses/')
-      if (data) courses.value = data
+      // Mirrors the tasks store. The API client falls back to {} when a body
+      // cannot be parsed, and assigning that here hands an object to a prop
+      // typed Array — which Vue warns about and the course picker renders as
+      // empty. Surfaced by the end-to-end suite.
+      courses.value = Array.isArray(data) ? data : []
     } finally {
       loading.value = false
     }
