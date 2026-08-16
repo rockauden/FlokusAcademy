@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from typing import List
 
 from app.database import get_db
-from app.models import Assignment, ChatMessage, ConsentRecord, Lesson, User, XPLedger
+from app.models import Assignment, ChatMessage, ConsentRecord, Lesson, SafetyEvent, User, XPLedger
 from app.auth import require_teacher_user
-from app.schemas import ConsentRecordCreate, ConsentRecordResponse
+from app.schemas import ConsentRecordCreate, ConsentRecordResponse, SafetyEventResponse
 
 router = APIRouter(prefix="/api/students", tags=["students"])
 
@@ -111,6 +111,14 @@ async def export_student_data(
         )
     ).scalars().all()
 
+    safety_events = (
+        await db.execute(
+            select(SafetyEvent)
+            .where(SafetyEvent.tenant_id == user.tenant_id, SafetyEvent.student_id == student.id)
+            .order_by(SafetyEvent.created_at)
+        )
+    ).scalars().all()
+
     return {
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "student": {
@@ -163,6 +171,17 @@ async def export_student_data(
             }
             for c in consent
         ],
+        "safety_events": [
+            {
+                "id": s.id,
+                "session_id": s.session_id,
+                "category": s.category,
+                "excerpt": s.excerpt,
+                "created_at": s.created_at,
+                "acknowledged_at": s.acknowledged_at,
+            }
+            for s in safety_events
+        ],
     }
 
 
@@ -187,6 +206,11 @@ async def delete_student_data(
     for label, stmt in (
         ("chat_history", delete(ChatMessage).where(
             ChatMessage.tenant_id == user.tenant_id, ChatMessage.student_id == student.id)),
+        # Must be deleted with the rest: safety_events.student_id is a foreign
+        # key to users.id, so leaving these behind would make the delete below
+        # fail outright rather than merely leaving stray rows.
+        ("safety_events", delete(SafetyEvent).where(
+            SafetyEvent.tenant_id == user.tenant_id, SafetyEvent.student_id == student.id)),
         ("xp_ledger", delete(XPLedger).where(
             XPLedger.tenant_id == user.tenant_id, XPLedger.student_id == student.id)),
         ("assignments", delete(Assignment).where(
@@ -200,3 +224,49 @@ async def delete_student_data(
 
     deleted["user"] = 1
     return {"message": f"Deleted all data for student {student.username}", "deleted": deleted}
+
+
+@router.get("/safety-events", response_model=List[SafetyEventResponse])
+async def list_safety_events(
+    unacknowledged_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_user),
+):
+    """Alerts raised by the AI tutor's safety check, newest first.
+
+    There is no push or email channel in this deployment, so this is how a
+    parent finds out. That is a real limitation: an alert waits until the
+    dashboard is next opened. It is recorded plainly rather than papered over,
+    because a parent should know the delay exists.
+    """
+    query = select(SafetyEvent).where(SafetyEvent.tenant_id == user.tenant_id)
+    if unacknowledged_only:
+        query = query.where(SafetyEvent.acknowledged_at.is_(None))
+    # id breaks ties: created_at is second-precision on SQLite, so two alerts
+    # raised in the same second would otherwise come back in an arbitrary and
+    # unstable order.
+    result = await db.execute(query.order_by(SafetyEvent.created_at.desc(), SafetyEvent.id.desc()))
+    return result.scalars().all()
+
+
+@router.post("/safety-events/{id}/acknowledge", response_model=SafetyEventResponse)
+async def acknowledge_safety_event(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_user),
+):
+    """Mark an alert as seen. Kept, not deleted -- the history is the point."""
+    result = await db.execute(
+        select(SafetyEvent).where(
+            SafetyEvent.tenant_id == user.tenant_id,
+            SafetyEvent.id == id,
+        )
+    )
+    event = result.scalars().first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Safety event not found")
+
+    event.acknowledged_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(event)
+    return event

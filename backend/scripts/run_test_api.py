@@ -33,6 +33,11 @@ TEST_ENV = {
     # 5/minute would throttle the run itself rather than test anything.
     "LOGIN_RATE_LIMIT": "1000/minute",
     "REFRESH_RATE_LIMIT": "1000/minute",
+    # Not a working key, and deliberately so. It is only here to get past the
+    # "AI tutor disabled" guard so the safety layer can be exercised -- that
+    # path short-circuits before any model call, so no request ever leaves the
+    # machine and no real key is needed to test the thing that matters most.
+    "GEMINI_API_KEY": "e2e-placeholder-not-a-real-key",
 }
 
 

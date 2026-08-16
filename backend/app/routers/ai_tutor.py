@@ -1,15 +1,18 @@
 import asyncio
 import logging
+from datetime import date, datetime, time
 from fastapi import APIRouter, Depends, HTTPException, Body
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from google import genai
 from app.database import get_db
 from app.schemas import ChatMessageResponse
-from app.models import ChatMessage, User
+from app.models import ChatMessage, SafetyEvent, User
 from app.auth import get_current_active_user
 from app.config import settings
 from app.repository import ChatRepository
+from app.services import safety
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,18 @@ CONTEXT_PREAMBLE = (
     "You are helping The student, a 5th grader, with their schoolwork. "
     "Never ask for or repeat personal details such as their real name, "
     "address, school, or contact information. "
+    # Topic boundary. Phrased as redirection rather than refusal: a flat "I
+    # can't discuss that" reads as a telling-off to a nine-year-old and teaches
+    # him to stop asking, which is the opposite of what a tutor wants.
+    "Stay on schoolwork and wholesome curiosity - subjects, projects, how "
+    "things work, history, nature, making things. If asked about something "
+    "outside that, or anything intended for adults, do not engage with it: "
+    "say briefly that it is not something you help with and offer a related "
+    "school topic instead. "
+    "If the student seems upset, worried or unwell, do not counsel them - "
+    "gently suggest they talk to their dad, and return to the work. "
+    "Never suggest meeting anyone, visiting sites outside this app, or "
+    "keeping anything secret from a parent."
 )
 
 PERSONAS = {
@@ -43,6 +58,22 @@ PERSONAS = {
 def _is_student_message(sender: str) -> bool:
     """Tolerates rows written before senders became role-based."""
     return sender in (SENDER_STUDENT, "Sonny")
+
+
+async def _messages_sent_today(db: AsyncSession, user: User) -> int:
+    """Count this student's own messages since local midnight."""
+    since = datetime.combine(date.today(), time.min)
+    result = await db.execute(
+        select(func.count())
+        .select_from(ChatMessage)
+        .where(
+            ChatMessage.tenant_id == user.tenant_id,
+            ChatMessage.student_id == user.id,
+            ChatMessage.sender == SENDER_STUDENT,
+            ChatMessage.timestamp >= since,
+        )
+    )
+    return result.scalar_one()
 
 
 @router.get("/personas")
@@ -76,9 +107,18 @@ async def chat_with_ai(
     if not client:
         raise HTTPException(status_code=503, detail="AI Tutor is disabled (No API key)")
 
+    # Cost and abuse ceiling, checked before anything is written or sent.
+    if await _messages_sent_today(db, user) >= settings.FLOKI_DAILY_MESSAGE_LIMIT:
+        raise HTTPException(
+            status_code=429,
+            detail="That's all the questions for Floki today. Ask your dad if you need more.",
+        )
+
     system_instruction = CONTEXT_PREAMBLE + PERSONAS.get(persona, PERSONAS["Socratic Tutor"])
 
-    # Save user message
+    # Save user message. This happens before the safety check so that a
+    # disclosure is recorded even if everything after it fails -- the parent
+    # needs to be able to read what was actually said.
     user_msg = ChatMessage(
         tenant_id=user.tenant_id,
         student_id=user.id,
@@ -89,15 +129,49 @@ async def chat_with_ai(
     db.add(user_msg)
     await db.commit()
 
+    # Safety gate. A match short-circuits the model entirely: a child
+    # disclosing harm should get a person, not a chatbot's best attempt at
+    # counselling. The reply is fixed, the parent is alerted, and nothing is
+    # sent upstream to Google.
+    finding = safety.check_message(message)
+    if finding:
+        db.add(SafetyEvent(
+            tenant_id=user.tenant_id,
+            student_id=user.id,
+            session_id=session_id,
+            category=finding.category,
+            excerpt=finding.excerpt,
+        ))
+        db.add(ChatMessage(
+            tenant_id=user.tenant_id,
+            student_id=user.id,
+            session_id=session_id,
+            sender=SENDER_ASSISTANT,
+            message=safety.ESCALATION_REPLY,
+        ))
+        await db.commit()
+        logger.warning(
+            "Safety escalation raised (category=%s, student=%s, session=%s)",
+            finding.category, user.id, session_id,
+        )
+        return {"message": safety.ESCALATION_REPLY, "escalated": True}
+
     # Get history for context — scoped to this student so one child's
     # conversation can never become another child's prompt context.
     history = await ChatRepository.list_for_session(
         db, tenant_id=user.tenant_id, student_id=user.id, session_id=session_id
     )
 
-    # Format for Gemini
+    # Format for Gemini. Only a trailing window of the conversation is replayed:
+    # sending the whole session made the cost of each turn grow with the length
+    # of the conversation, so a long afternoon cost quadratically more than a
+    # short one and would eventually overrun the context window.
+    previous = history[:-1]  # Exclude the just-added user message
+    if settings.FLOKI_CONTEXT_MESSAGES > 0:
+        previous = previous[-settings.FLOKI_CONTEXT_MESSAGES:]
+
     contents = []
-    for h in history[:-1]:  # Exclude the just-added user message
+    for h in previous:
         role = "user" if _is_student_message(h.sender) else "model"
         contents.append({"role": role, "parts": [{"text": h.message}]})
     contents.append({"role": "user", "parts": [{"text": message}]})

@@ -1,5 +1,6 @@
 <script setup>
 import { useAuthStore } from '../stores/auth'
+import SafetyAlertBanner from '../components/admin/SafetyAlertBanner.vue'
 
 const authStore = useAuthStore()
 
@@ -44,6 +45,7 @@ function logout() {
         <button class="btn-ghost" @click="logout">Logout</button>
       </header>
       <main class="main-content">
+        <SafetyAlertBanner />
         <router-view />
       </main>
     </div>

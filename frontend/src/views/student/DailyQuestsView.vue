@@ -4,7 +4,8 @@ import { useTasksStore } from '../../stores/tasks'
 import { api } from '../../api/client'
 import TaskCard from '../../components/student/TaskCard.vue'
 import ProgressBar from '../../components/common/ProgressBar.vue'
-import WeekStrip from '../../components/student/WeekStrip.vue'
+// WeekStrip.vue is kept, not deleted — it is wired back in during Phase 3
+// (L-03) once a per-day completion endpoint exists to feed it.
 import KpiCard from '../../components/common/KpiCard.vue'
 import NotificationBar from '../../components/common/NotificationBar.vue'
 import { taskXp } from '../../utils/xp'
@@ -56,18 +57,24 @@ async function handleComplete({ id, notes, minutes }) {
     <div class="kpi-row">
       <KpiCard icon="🎯" :value="`${completedCount}/${totalTasks}`" label="Tasks Done" color="blue" />
       <KpiCard icon="⭐" :value="xpEarned" label="XP Earned Today" color="gold" />
-      <KpiCard icon="🔥" value="5" label="Daily Streak" color="orange" subtitle="Keep it up!" />
+      <!--
+        TODO (Phase 3, L-03): restore the daily streak alongside the week strip
+        below, once both are backed by real data.
+
+        Removed rather than left in place because both were invented: the
+        streak was the literal value 5, and the week strip was pinned to four
+        dates in October 2023 with made-up completion counts. A motivational
+        system that credits work a child did not do stops being believed the
+        first time he notices, and it takes the honest parts down with it.
+
+        Wiring these needs a per-day completion count for the student across a
+        date range, which no endpoint returns yet.
+      -->
     </div>
 
     <div class="progress-section mt-md mb-md">
       <ProgressBar :percent="completionPercent" label="Daily Completion" />
     </div>
-
-    <!-- Placeholder week dates and counts, ideally fetched from an API -->
-    <WeekStrip 
-      :week-dates="['2023-10-23', '2023-10-24', '2023-10-25', '2023-10-26']"
-      :task-counts="{ '2023-10-23': {total: 5, completed: 5}, '2023-10-24': {total: 4, completed: 2} }"
-    />
 
     <div class="task-lists">
       <div v-for="(tasks, subject) in tasksStore.tasksBySubject" :key="subject" class="subject-group">

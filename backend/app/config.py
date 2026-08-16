@@ -37,6 +37,20 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT: str = "5/minute"
     REFRESH_RATE_LIMIT: str = "30/minute"
 
+    # Ask Floki guardrails.
+    #
+    # A per-day ceiling on messages, per student. This is a cost and abuse
+    # bound, not a teaching limit -- it sits well above a normal school day's
+    # use, and is there so a stuck loop or a bored afternoon cannot run up an
+    # unbounded bill against the Gemini key.
+    FLOKI_DAILY_MESSAGE_LIMIT: int = 60
+
+    # How many past messages are replayed as context. The implementation used
+    # to send the entire session every turn, so cost grew with the square of
+    # the conversation length and would eventually exceed the context window
+    # outright. A rolling window keeps both bounded.
+    FLOKI_CONTEXT_MESSAGES: int = 20
+
     # Secure cookies require HTTPS. Set false for plain-http local development.
     COOKIE_SECURE: bool = True
 

@@ -246,6 +246,17 @@ class ConsentRecordResponse(BaseModel):
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 
+# --- Safety ---
+class SafetyEventResponse(BaseModel):
+    id: int
+    student_id: int
+    session_id: str
+    category: str
+    excerpt: str
+    created_at: datetime
+    acknowledged_at: Optional[datetime] = None
+    model_config = ConfigDict(from_attributes=True)
+
 # --- Scheduling ---
 class ScheduleRecalcRequest(BaseModel):
     module_id: Optional[int] = None

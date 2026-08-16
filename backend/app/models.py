@@ -245,6 +245,29 @@ class ConsentRecord(Base):
     consent_version: Mapped[str] = mapped_column(String(50), nullable=False)
     is_granted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
+class SafetyEvent(Base):
+    """Raised when a child's message to the tutor needs a parent's attention.
+
+    Kept separate from chat_history so an alert can be listed, counted and
+    acknowledged without reading the transcript, and so it survives the 90-day
+    chat retention purge — a parent should still be able to see that something
+    was flagged in March even once March's messages are gone. The excerpt is
+    capped for the same reason the rest of this table is minimal: it exists to
+    tell a parent where to look, not to become a second copy of the child's
+    conversation.
+    """
+    __tablename__ = 'safety_events'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    student_id: Mapped[int] = mapped_column(ForeignKey('users.id'), nullable=False, index=True)
+    session_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # 'self_harm' | 'abuse' | 'distress' -- see services/safety.py
+    category: Mapped[str] = mapped_column(String(40), nullable=False)
+    excerpt: Mapped[str] = mapped_column(String(400), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+    # Null until the parent marks it seen; this is what drives the unread count.
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 class AppConfig(Base):
     __tablename__ = 'app_config'
     key: Mapped[str] = mapped_column(String, primary_key=True)
