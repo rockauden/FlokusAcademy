@@ -11,6 +11,13 @@ buildCommand = "pip install -r requirements.txt"
 # The '*' is quoted so the shell cannot glob-expand it against the working
 # directory. Safe here because Railway's edge is the only route to this
 # container — it is not reachable directly.
+# Migrations run as their own step before the new container takes traffic, so
+# code never starts against a schema it does not match. Until now this was a
+# manual step, and forgetting it is precisely how production came to disagree
+# with the migration chain once already. A failure here should block the
+# deploy: serving the old version is better than serving a version whose
+# tables do not exist.
+preDeployCommand = "alembic upgrade head"
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --forwarded-allow-ips='*'"
 # Liveness, not readiness: this path must not touch the database, or a brief
 # Postgres blip would trip restartPolicyType and crash-loop a healthy
