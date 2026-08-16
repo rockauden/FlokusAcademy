@@ -2,8 +2,9 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Response, status
+from fastapi import Depends, FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from sqlalchemy import text
@@ -11,8 +12,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import async_session_maker, engine, get_db
+from app.observability import (
+    REQUEST_ID_HEADER,
+    RequestIdMiddleware,
+    configure_logging,
+    get_request_id,
+)
 from app.rate_limit import limiter
 from app.services.retention import purge_old_chat_history
+
+configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
 
 from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students
 
@@ -67,12 +76,43 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Turn an unhandled error into a logged, quotable 500.
+
+    The exception itself goes to the logs with the request id attached; the
+    caller gets that id and nothing else. Exception text routinely contains
+    connection strings, query fragments and internal paths, none of which
+    belong on a nine-year-old's screen or in a browser's network tab.
+    """
+    request_id = get_request_id()
+    logger.exception(
+        "Unhandled error on %s %s (request_id=%s)",
+        request.method, request.url.path, request_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "Something went wrong on our end. Please try again.",
+            "request_id": request_id,
+        },
+        headers={REQUEST_ID_HEADER: request_id},
+    )
+
+
+# Added last so it runs first: the id must exist before anything else can log.
+app.add_middleware(RequestIdMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", REQUEST_ID_HEADER],
+    # Without this the browser cannot read the header, so a request id shown to
+    # the user would be invisible to the code that needs to display it.
+    expose_headers=[REQUEST_ID_HEADER],
 )
 
 # Include Routers

@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     LOGIN_RATE_LIMIT: str = "5/minute"
     REFRESH_RATE_LIMIT: str = "30/minute"
 
+    # Logging. Set LOG_FORMAT=json in production so the platform can index the
+    # fields; plain text is far easier to read in a local terminal.
+    LOG_LEVEL: str = "INFO"
+    LOG_FORMAT: str = "text"
+
     # Ask Floki guardrails.
     #
     # A per-day ceiling on messages, per student. This is a cost and abuse

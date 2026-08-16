@@ -116,7 +116,12 @@ async function performRequest(endpoint, options, isRetry) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    throw new Error(describeError(data))
+    const error = new Error(describeError(data))
+    // Carried so the UI can show it and the same failure can be found in the
+    // server logs. The server sets this header on every response.
+    error.requestId = response.headers.get('X-Request-ID') || data.request_id || null
+    error.status = response.status
+    throw error
   }
 
   return data
