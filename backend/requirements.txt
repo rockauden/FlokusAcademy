@@ -1,13 +1,32 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
-sqlalchemy[asyncio]>=2.0.0
-alembic>=1.13.0
-asyncpg>=0.30.0
-python-jose[cryptography]>=3.3.0
-slowapi>=0.1.9
-bcrypt>=4.0.0
-python-dotenv>=1.0.0
-pydantic-settings>=2.0.0
-google-genai>=1.0.0
-pandas>=2.0.0
-aiofiles>=24.0.0
+# Pinned exactly, not with >= bounds.
+#
+# With lower bounds only, two deploys of the same commit can resolve different
+# dependency trees -- so a build that worked yesterday can fail today with no
+# change on our side, and the failure appears to come from nowhere. Pinning
+# makes a deploy reproducible and makes an upgrade a deliberate, reviewable
+# commit rather than an accident of timing.
+#
+# These are the versions the application is currently running and tested
+# against. To upgrade: bump here, run `npm run test:e2e` in frontend/, and
+# check /health/ready afterwards.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.3
+sqlalchemy[asyncio]==2.0.52
+alembic==1.19.1
+asyncpg==0.31.0
+python-jose[cryptography]==3.5.0
+slowapi==0.1.10
+bcrypt==5.0.0
+python-dotenv==1.2.2
+pydantic-settings==2.15.0
+google-genai==2.18.0
+
+# SQLite driver. Needed by the end-to-end suite, which builds a throwaway
+# SQLite database rather than requiring a Postgres instance to run tests.
+aiosqlite==0.22.1
+
+# Removed: pandas and aiofiles. Neither is imported anywhere in this service --
+# the CSV export uses the standard library's csv module, and the upload mount
+# that used aiofiles was removed in H-06. pandas in particular pulls numpy and
+# cost every deploy a large build for nothing.
