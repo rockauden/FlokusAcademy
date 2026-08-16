@@ -7,11 +7,22 @@ import ProgressBar from '../../components/common/ProgressBar.vue'
 import WeekStrip from '../../components/student/WeekStrip.vue'
 import KpiCard from '../../components/common/KpiCard.vue'
 import CelebrationBurst from '../../components/student/CelebrationBurst.vue'
+import SkeletonBlock from '../../components/common/SkeletonBlock.vue'
+import TaskCardSkeleton from '../../components/student/TaskCardSkeleton.vue'
+import { useDelayedLoading } from '../../composables/useDelayedLoading'
 import NotificationBar from '../../components/common/NotificationBar.vue'
 import { taskXp } from '../../utils/xp'
 
 const tasksStore = useTasksStore()
 let pollInterval = null
+
+// Skeletons cover the first load only. tasksStore.loading also goes true on
+// every 30-second poll, and swapping the list out for placeholders twice a
+// minute -- while the child is reading it -- would be far worse than the blank
+// flash this replaces.
+const hasLoadedOnce = ref(false)
+const initialLoading = computed(() => tasksStore.loading && !hasLoadedOnce.value)
+const showSkeleton = useDelayedLoading(initialLoading)
 
 // Real week strip and streak, replacing the values that used to be hardcoded
 // to October 2023 and a literal 5.
@@ -38,7 +49,13 @@ const weekCounts = computed(() =>
 )
 
 onMounted(async () => {
-  await tasksStore.fetchTodayTasks()
+  try {
+    await tasksStore.fetchTodayTasks()
+  } finally {
+    // Set even when the fetch fails, so a failed first load shows the real
+    // (empty) view and its error toast rather than skeletons forever.
+    hasLoadedOnce.value = true
+  }
   await loadActivity()
   pollInterval = setInterval(() => {
     tasksStore.fetchTodayTasks()
@@ -97,7 +114,13 @@ async function handleComplete({ id, notes, minutes }) {
     
     <header class="hero">
       <h1>Good morning, Sonny! 🚀</h1>
-      <p class="subtitle">You have {{ tasksStore.pendingTasks.length }} tasks left today. Estimated time: {{ estimatedTime }}m. XP Available: {{ xpAvailable }}</p>
+      <!--
+        While the day is still loading this must not read "You have 0 tasks
+        left today" -- that is a specific, wrong, and rather deflating claim to
+        make before the answer is known.
+      -->
+      <SkeletonBlock v-if="showSkeleton" width="22rem" height="1.05rem" />
+      <p v-else class="subtitle">You have {{ tasksStore.pendingTasks.length }} tasks left today. Estimated time: {{ estimatedTime }}m. XP Available: {{ xpAvailable }}</p>
     </header>
 
     <div class="kpi-row">
@@ -124,7 +147,14 @@ async function handleComplete({ id, notes, minutes }) {
 
     <WeekStrip :week-dates="weekDates" :task-counts="weekCounts" />
 
-    <div class="task-lists">
+    <div v-if="showSkeleton" class="task-lists" aria-busy="true">
+      <h3 class="subject-header"><SkeletonBlock width="9rem" height="1.1rem" /></h3>
+      <!-- Three is the usual shape of a school morning; enough to fill the
+           space without pretending to know the real number. -->
+      <TaskCardSkeleton v-for="n in 3" :key="n" />
+    </div>
+
+    <div v-else class="task-lists">
       <div v-for="(tasks, subject) in tasksStore.tasksBySubject" :key="subject" class="subject-group">
         <h3 class="subject-header">{{ subject }}</h3>
         <transition-group name="list" tag="div">
