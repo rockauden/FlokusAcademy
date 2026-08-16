@@ -246,6 +246,17 @@ class ConsentRecordResponse(BaseModel):
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 
+# --- Activity ---
+class DayActivity(BaseModel):
+    date: date
+    total: int
+    completed: int
+
+class ActivityResponse(BaseModel):
+    """Per-day counts for the week strip, plus the streak they imply."""
+    days: List[DayActivity]
+    streak: int
+
 # --- Safety ---
 class SafetyEventResponse(BaseModel):
     id: int

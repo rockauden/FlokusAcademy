@@ -1,11 +1,10 @@
 <script setup>
-import { onMounted, onUnmounted, computed } from 'vue'
+import { onMounted, onUnmounted, computed, ref } from 'vue'
 import { useTasksStore } from '../../stores/tasks'
 import { api } from '../../api/client'
 import TaskCard from '../../components/student/TaskCard.vue'
 import ProgressBar from '../../components/common/ProgressBar.vue'
-// WeekStrip.vue is kept, not deleted — it is wired back in during Phase 3
-// (L-03) once a per-day completion endpoint exists to feed it.
+import WeekStrip from '../../components/student/WeekStrip.vue'
 import KpiCard from '../../components/common/KpiCard.vue'
 import NotificationBar from '../../components/common/NotificationBar.vue'
 import { taskXp } from '../../utils/xp'
@@ -13,8 +12,33 @@ import { taskXp } from '../../utils/xp'
 const tasksStore = useTasksStore()
 let pollInterval = null
 
+// Real week strip and streak, replacing the values that used to be hardcoded
+// to October 2023 and a literal 5.
+const activity = ref({ days: [], streak: 0 })
+
+async function loadActivity() {
+  try {
+    const data = await api.get('/analytics/activity')
+    if (data) activity.value = data
+  } catch (error) {
+    // The strip is decoration around the day's work. If it cannot load, the
+    // quests themselves still must, so this failure is logged and swallowed
+    // rather than propagated.
+    console.error('Could not load week activity:', error)
+  }
+}
+
+// WeekStrip wants Mon-Thu dates and a { 'YYYY-MM-DD': {total, completed} } map.
+const weekDates = computed(() => activity.value.days.map((d) => d.date))
+const weekCounts = computed(() =>
+  Object.fromEntries(
+    activity.value.days.map((d) => [d.date, { total: d.total, completed: d.completed }]),
+  ),
+)
+
 onMounted(async () => {
   await tasksStore.fetchTodayTasks()
+  await loadActivity()
   pollInterval = setInterval(() => {
     tasksStore.fetchTodayTasks()
   }, 30000)
@@ -40,6 +64,15 @@ const xpEarned = computed(() => {
   return tasksStore.completedTasks.reduce((sum, t) => sum + taskXp(t), 0)
 })
 
+// No streak yet is a normal state, not a failure — say something true rather
+// than cheering for nothing.
+const streakSubtitle = computed(() => {
+  const days = activity.value.streak
+  if (days === 0) return 'Finish today to start one'
+  if (days === 1) return 'One day down'
+  return 'Keep it up!'
+})
+
 async function handleComplete({ id, notes, minutes }) {
   await tasksStore.completeTask(id, notes, minutes)
 }
@@ -58,23 +91,24 @@ async function handleComplete({ id, notes, minutes }) {
       <KpiCard icon="🎯" :value="`${completedCount}/${totalTasks}`" label="Tasks Done" color="blue" />
       <KpiCard icon="⭐" :value="xpEarned" label="XP Earned Today" color="gold" />
       <!--
-        TODO (Phase 3, L-03): restore the daily streak alongside the week strip
-        below, once both are backed by real data.
-
-        Removed rather than left in place because both were invented: the
-        streak was the literal value 5, and the week strip was pinned to four
-        dates in October 2023 with made-up completion counts. A motivational
-        system that credits work a child did not do stops being believed the
-        first time he notices, and it takes the honest parts down with it.
-
-        Wiring these needs a per-day completion count for the student across a
-        date range, which no endpoint returns yet.
+        Real, from /analytics/activity. Counts consecutive finished school days
+        rather than calendar days, so a weekend does not reset it, and an
+        unfinished today does not zero it before the day is over.
       -->
+      <KpiCard
+        icon="🔥"
+        :value="activity.streak"
+        label="Daily Streak"
+        color="orange"
+        :subtitle="streakSubtitle"
+      />
     </div>
 
     <div class="progress-section mt-md mb-md">
       <ProgressBar :percent="completionPercent" label="Daily Completion" />
     </div>
+
+    <WeekStrip :week-dates="weekDates" :task-counts="weekCounts" />
 
     <div class="task-lists">
       <div v-for="(tasks, subject) in tasksStore.tasksBySubject" :key="subject" class="subject-group">

@@ -127,6 +127,44 @@ class AssignmentRepository:
         return result.scalars().all()
 
     @staticmethod
+    async def in_day_range(
+        db: AsyncSession,
+        tenant_id: int,
+        student_id: int,
+        start: date,
+        end: date,
+    ) -> Sequence[Assignment]:
+        """Assignments belonging to each day between start and end inclusive.
+
+        Which date an assignment "belongs to" depends on whether it is done,
+        exactly as the student's day view decides it: outstanding work belongs
+        to the day it is scheduled for, finished work to the day it was
+        actually finished. The rolling scheduler rewrites scheduled_date on
+        completion, so using it for both would attribute finished work to
+        whatever date the scheduler last moved it to.
+        """
+        result = await db.execute(
+            select(Assignment)
+            .where(
+                Assignment.tenant_id == tenant_id,
+                Assignment.student_id == student_id,
+                or_(
+                    and_(
+                        Assignment.is_completed == False,
+                        Assignment.scheduled_date >= start,
+                        Assignment.scheduled_date <= end,
+                    ),
+                    and_(
+                        Assignment.is_completed == True,
+                        Assignment.actual_completion_date >= start,
+                        Assignment.actual_completion_date <= end,
+                    ),
+                ),
+            )
+        )
+        return result.scalars().all()
+
+    @staticmethod
     async def for_scheduling(db: AsyncSession, tenant_id: int, unit_id: Optional[int] = None) -> Sequence[Assignment]:
         """Open + completed assignments with their lesson, for the rolling scheduler."""
         query = (
