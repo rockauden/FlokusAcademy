@@ -1,0 +1,80 @@
+# Line endings.
+#
+# Committed content was already LF throughout — `core.autocrlf=true` on this
+# machine was normalising correctly on the way in, so no commit has ever
+# carried CRLF churn. What it was *not* doing is keeping the working tree in
+# step: 75 of 181 tracked files sat as CRLF on disk against an all-LF index,
+# and git announced that on every single command ("LF will be replaced by CRLF
+# the next time Git touches it"). Enough noise to hide a real warning.
+#
+# `eol=lf` is what fixes it, rather than `text=auto` alone. auto only decides
+# what the *index* holds; eol pins the checkout too, so disk and index agree
+# and the warnings stop having anything to report. It also removes the
+# dependence on each clone's core.autocrlf: a machine with it set to false
+# would otherwise start committing CRLF the moment it edited a file.
+#
+# Everything here is deployed to Linux, so LF is the right default. The two
+# exceptions below are the files where it genuinely is not.
+#
+# After changing this file: `git add --renormalize .`, then `git rm -r --cached .`
+# + `git reset --hard` on a clean tree to rewrite the working copies.
+
+* text=auto eol=lf
+
+# Named explicitly rather than left to `text=auto`, which decides by sniffing
+# content. That heuristic is right nearly always, and "nearly" is what
+# produces a file that behaves differently from its neighbours for reasons
+# nobody can see.
+*.py     text
+*.js     text
+*.vue    text
+*.css    text
+*.html   text
+*.json   text
+*.md     text
+*.yml    text
+*.yaml   text
+*.toml   text
+*.ini    text
+*.sql    text
+*.txt    text
+*.svg    text
+*.mako   text
+*.example text
+
+# Already covered by the eol=lf default above, but stated outright because
+# these are the ones where getting it wrong is a production incident rather
+# than an annoyance: they are read by Linux at deploy time, and a CRLF on a
+# shebang or a process definition makes the interpreter unfindable — a
+# container that will not start, reported as a missing file that is plainly
+# right there.
+*.sh     text eol=lf
+Procfile text eol=lf
+
+# The exceptions. cmd.exe mis-parses LF-only batch files, and these two never
+# leave Windows — they set up the archived Streamlit app on Sonny's PC.
+*.bat    text eol=crlf
+*.ps1    text eol=crlf
+
+# Never normalise and never diff as text — line-ending translation corrupts
+# these outright.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.pdf    binary
+*.zip    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.eot    binary
+*.db     binary
+*.sqlite binary
+*.sqlite3 binary
+
+# The curriculum workbooks are tracked (see research_and_development/). They
+# are zip archives; a byte of CRLF translation makes them unopenable.
+*.xlsx   binary
+*.xls    binary
