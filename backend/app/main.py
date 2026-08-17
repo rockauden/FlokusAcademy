@@ -23,7 +23,7 @@ from app.services.retention import purge_old_chat_history
 
 configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
 
-from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students
+from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students, app_config
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +128,7 @@ app.include_router(analytics.router)
 app.include_router(ai_tutor.router)
 app.include_router(rewards.router)
 app.include_router(students.router)
+app.include_router(app_config.router)
 
 @app.get("/health")
 async def health_check():

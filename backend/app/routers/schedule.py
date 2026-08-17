@@ -8,7 +8,8 @@ from app.schemas import SchoolCalendarCreate, SchoolCalendarEntry, ScheduleRecal
 from app.models import SchoolCalendar
 from app.auth import require_teacher_user
 from app.models import User
-from app.services.rolling_scheduler import reschedule_from_today, get_school_days
+from app.repository import AppConfigRepository
+from app.services.rolling_scheduler import reschedule_from_today, get_school_days, parse_school_days
 
 router = APIRouter(prefix="/api/schedule", tags=["schedule"])
 
@@ -58,5 +59,11 @@ async def remove_calendar_entry(id: int, db: AsyncSession = Depends(get_db), use
 async def list_school_days(start_date: date = Query(...), count: int = Query(10), db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
     result = await db.execute(select(SchoolCalendar.calendar_date).where(SchoolCalendar.tenant_id == user.tenant_id, SchoolCalendar.day_type != 'school_day'))
     non_school_dates = set(result.scalars().all())
-    days = get_school_days(start_date, count, non_school_dates)
+    # Same source of truth as the scheduler. Answering from a hardcoded Mon-Thu
+    # here while the scheduler read app_config would mean this endpoint quietly
+    # described a week nobody was working.
+    school_weekdays = parse_school_days(
+        await AppConfigRepository.get(db, tenant_id=user.tenant_id, key='school_days')
+    )
+    days = get_school_days(start_date, count, non_school_dates, school_weekdays)
     return {"school_days": days}

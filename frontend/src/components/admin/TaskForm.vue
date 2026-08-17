@@ -36,6 +36,11 @@ const form = ref(props.initialData || {
   // admin view. Clearing the field is still allowed and still means
   // "authored but not scheduled yet"; it just is not the default.
   scheduled_date: todayISO(),
+  // Off by default, and deliberately separate from the date above. The date
+  // defaults to today for convenience, which is not the same as the teacher
+  // saying "this belongs on today" — so the scheduler stays free to move it.
+  // Ticking the box is what turns the date into a promise.
+  date_locked: false,
   medium: 'online'
 })
 
@@ -138,6 +143,18 @@ function submit() {
 
     <div class="form-group mt-md checkbox">
       <label>
+        <input type="checkbox" v-model="form.date_locked" class="pin-date" :disabled="!form.scheduled_date" />
+        📌 Pin to this date
+      </label>
+      <p class="text-muted hint">
+        Recalculating the schedule — which also happens when you add a sick day
+        or a holiday — moves unpinned work. Pin a date you have promised, like a
+        Saturday co-op.
+      </p>
+    </div>
+
+    <div class="form-group mt-md checkbox">
+      <label>
         <input type="checkbox" v-model="form.is_boss_fight" />
         👑 Is Boss Fight?
       </label>
@@ -156,6 +173,10 @@ function submit() {
 .form-error {
   color: var(--color-danger, #e05252);
   margin-top: var(--space-md);
+}
+.hint {
+  font-size: 0.8125rem;
+  margin-top: var(--space-sm);
 }
 
 .form-grid {

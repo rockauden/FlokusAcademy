@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional
-from sqlalchemy import Integer, String, Boolean, Date, DateTime, Float, ForeignKey, UniqueConstraint, true
+from sqlalchemy import Integer, String, Boolean, Date, DateTime, Float, ForeignKey, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -85,6 +85,7 @@ class Lesson(Base):
     workbook_pages: Mapped[str] = mapped_column(String, default='')
     sequence_order: Mapped[int] = mapped_column(Integer, default=0)
     school_day_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 0=Mon … 6=Sun. A Fri/Sat/Sun hint is a deliberate placement, not an error.
     day_of_week_hint: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     dependency_mode: Mapped[str] = mapped_column(String, default='independent')
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30)
@@ -116,6 +117,20 @@ class Assignment(Base):
     student_id: Mapped[int] = mapped_column(ForeignKey('users.id'), index=True)
     lesson_id: Mapped[int] = mapped_column(ForeignKey('lessons.id'), index=True)
     scheduled_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    # This date is pinned and the rolling scheduler must not move it.
+    #
+    # Without the flag a Saturday catch-up survives exactly until the next sick
+    # day: routers/schedule.py fires a full-tenant reschedule_from_today on add
+    # sick day, add holiday and delete calendar entry, and the scheduler
+    # assigns scheduled_date unconditionally for `independent` — the default
+    # mode. So the Saturday silently became a Monday and nobody was told.
+    #
+    # Set only when the teacher explicitly asks for it, never inferred from
+    # "a date was supplied". An earlier cut inferred it, which pinned every
+    # quick add — the task form defaults the date to today — and left the
+    # scheduler unable to place any of that work. Most dates are the
+    # scheduler's to revise; a pin is the exception, and has to be said.
+    date_locked: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
     actual_completion_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     focus_minutes: Mapped[int] = mapped_column(Integer, default=0)

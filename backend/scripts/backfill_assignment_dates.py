@@ -11,9 +11,13 @@ Quick Add now defaults to today, so this is a one-shot repair of the backlog,
 not something to run regularly.
 
 Dates are allocated with the same `get_school_days` helper the rolling
-scheduler uses, so weekends (Fri/Sat/Sun) and anything marked as a holiday or
-sick day in school_calendar are skipped. Work is spread `--per-day` at a time
-rather than dumped on a single date, and each student is filled independently.
+scheduler uses, reading the same `app_config.school_days` — so non-core days
+(ordinarily Fri/Sat/Sun) and anything marked as a holiday or sick day in
+school_calendar are skipped. Work is spread `--per-day` at a time rather than
+dumped on a single date, and each student is filled independently.
+
+Backfilled dates are left unlocked. They are the scheduler's guesses, not a
+teacher's placement, so a later recalculation is free to improve on them.
 
 Usage (from backend/):
     python -m scripts.backfill_assignment_dates --dry-run
@@ -41,7 +45,8 @@ from sqlalchemy.orm import selectinload
 
 from app.database import async_session_maker, engine
 from app.models import Assignment, SchoolCalendar, User
-from app.services.rolling_scheduler import get_school_days
+from app.repository import AppConfigRepository
+from app.services.rolling_scheduler import get_school_days, parse_school_days
 
 
 def _database_name() -> str:
@@ -96,8 +101,14 @@ async def _plan(session, start: date, per_day: int) -> dict[tuple[int, int], lis
         assignments.sort(key=lambda a: ((a.lesson.sequence_order if a.lesson else 0), a.id))
 
         skip = await _non_school_dates(session, tenant_id)
+        # The school week is configuration, so read it rather than relying on
+        # the Mon-Thu default: this script's whole claim is that it places work
+        # exactly where the rolling scheduler would.
+        school_weekdays = parse_school_days(
+            await AppConfigRepository.get(session, tenant_id=tenant_id, key='school_days')
+        )
         days_needed = -(-len(assignments) // per_day)  # ceiling division
-        school_days = get_school_days(start, days_needed, skip)
+        school_days = get_school_days(start, days_needed, skip, school_weekdays)
 
         plan[key] = [
             (assignment, school_days[index // per_day])

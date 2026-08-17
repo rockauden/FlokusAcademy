@@ -56,6 +56,7 @@ def _merge(a: Assignment) -> dict:
         "ufa_eligible": lesson.ufa_eligible,
         "ufa_hours_credit": lesson.ufa_hours_credit,
         "scheduled_date": a.scheduled_date,
+        "date_locked": a.date_locked,
         "is_completed": a.is_completed,
         "actual_completion_date": a.actual_completion_date,
         "completion_notes": a.completion_notes,
@@ -64,22 +65,30 @@ def _merge(a: Assignment) -> dict:
     }
 
 
-def _split_payload(task: TaskCreate) -> tuple[dict, Optional[date]]:
+def _split_payload(task: TaskCreate) -> tuple[dict, Optional[date], bool]:
     """Separate curriculum fields (Lesson) from instance fields (Assignment).
 
     The client still speaks the old flat vocabulary, so course_id/module_id are
     translated here and scheduled_date is peeled off — Lesson has no such
-    column any more and would reject it.
+    column any more and would reject it. date_locked comes off for the same
+    reason: it belongs to the student's instance, not to the curriculum.
     """
     payload = task.model_dump()
     scheduled_date = payload.pop('scheduled_date', None)
+    # A pin with no date to pin is meaningless — the scheduler skips locked
+    # assignments, so an undated locked one would simply never be placed.
+    date_locked = bool(payload.pop('date_locked', False)) and scheduled_date is not None
     payload['program_id'] = payload.pop('course_id')
     payload['unit_id'] = payload.pop('module_id')
-    return payload, scheduled_date
+    return payload, scheduled_date, date_locked
 
 
 async def _assign_to_students(
-    db: AsyncSession, tenant_id: int, lesson: Lesson, scheduled_date: Optional[date]
+    db: AsyncSession,
+    tenant_id: int,
+    lesson: Lesson,
+    scheduled_date: Optional[date],
+    date_locked: bool = False,
 ) -> list[Assignment]:
     """Hand a newly authored lesson to every student in the tenant.
 
@@ -95,6 +104,7 @@ async def _assign_to_students(
             student_id=student.id,
             lesson_id=lesson.id,
             scheduled_date=scheduled_date,
+            date_locked=date_locked,
         )
         db.add(assignment)
         created.append(assignment)
@@ -148,12 +158,14 @@ async def get_today_tasks(db: AsyncSession = Depends(get_db), user: User = Depen
 
 @router.post("/", response_model=TaskResponse)
 async def create_task(task: TaskCreate, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
-    payload, scheduled_date = _split_payload(task)
+    payload, scheduled_date, date_locked = _split_payload(task)
     lesson = Lesson(**payload, tenant_id=user.tenant_id)
     db.add(lesson)
     await db.flush()
 
-    assignments = await _assign_to_students(db, user.tenant_id, lesson, scheduled_date)
+    assignments = await _assign_to_students(
+        db, user.tenant_id, lesson, scheduled_date, date_locked
+    )
     if not assignments:
         raise HTTPException(
             status_code=409,
@@ -168,11 +180,13 @@ async def create_task(task: TaskCreate, db: AsyncSession = Depends(get_db), user
 async def create_tasks_bulk(tasks: List[TaskCreate], db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):
     first_ids = []
     for t in tasks:
-        payload, scheduled_date = _split_payload(t)
+        payload, scheduled_date, date_locked = _split_payload(t)
         lesson = Lesson(**payload, tenant_id=user.tenant_id)
         db.add(lesson)
         await db.flush()
-        assignments = await _assign_to_students(db, user.tenant_id, lesson, scheduled_date)
+        assignments = await _assign_to_students(
+            db, user.tenant_id, lesson, scheduled_date, date_locked
+        )
         if not assignments:
             raise HTTPException(
                 status_code=409,

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models import (
+    AppConfig,
     Assignment,
     ChatMessage,
     CreatorProject,
@@ -363,6 +364,47 @@ class ChatRepository:
             .order_by(ChatMessage.timestamp)
         )
         return result.scalars().all()
+
+
+class AppConfigRepository:
+    """Settings that are data rather than deployment configuration.
+
+    The school week, the academic year's first day and the grade level all
+    change without a release, and all of them were previously either hardcoded
+    or inferred from something fragile. They live here so changing them is an
+    edit, not a deploy.
+    """
+
+    @staticmethod
+    async def get(db: AsyncSession, tenant_id: int, key: str, default: str | None = None) -> str | None:
+        result = await db.execute(
+            select(AppConfig.value).where(AppConfig.tenant_id == tenant_id, AppConfig.key == key)
+        )
+        value = result.scalars().first()
+        return default if value is None else value
+
+    @staticmethod
+    async def get_many(db: AsyncSession, tenant_id: int, keys: Sequence[str]) -> dict[str, str]:
+        result = await db.execute(
+            select(AppConfig.key, AppConfig.value).where(
+                AppConfig.tenant_id == tenant_id, AppConfig.key.in_(keys)
+            )
+        )
+        return {row.key: row.value for row in result}
+
+    @staticmethod
+    async def set(db: AsyncSession, tenant_id: int, key: str, value: str) -> AppConfig:
+        """Upsert one key. Does not commit — the caller owns the transaction."""
+        result = await db.execute(
+            select(AppConfig).where(AppConfig.tenant_id == tenant_id, AppConfig.key == key)
+        )
+        row = result.scalars().first()
+        if row is None:
+            row = AppConfig(tenant_id=tenant_id, key=key, value=value)
+            db.add(row)
+        else:
+            row.value = value
+        return row
 
 
 class PurchaseRepository:

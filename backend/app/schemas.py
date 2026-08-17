@@ -68,9 +68,12 @@ class TaskBase(BaseModel):
     sequence_order: int = 0
     school_day_offset: Optional[int] = None
     scheduled_date: Optional[date] = None
-    # 0=Mon … 3=Thu. get_school_days treats weekday() >= 4 as weekend, so a
-    # hint of 4 (Fri) would place a lesson on a non-school day.
-    day_of_week_hint: Optional[int] = Field(None, ge=0, le=3)
+    # 0=Mon … 6=Sun. Was capped at 3 to match a scheduler that treated
+    # weekday() >= 4 as weekend. Fri/Sat/Sun are now *optional* days rather
+    # than forbidden ones: the auto-scheduler still never chooses them, but a
+    # hint naming one is a deliberate statement — "this lesson belongs on a
+    # Saturday" — and rejecting it made the calendar model unexpressible.
+    day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
     dependency_mode: str = 'independent'
     estimated_minutes: int = 30
     xp_reward: int = 10
@@ -82,6 +85,15 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     module_id: Optional[int] = None
     course_id: int
+    # Pin this date so the rolling scheduler leaves it alone.
+    #
+    # Deliberately explicit and off by default, rather than inferred from
+    # "a scheduled_date was supplied". The task form defaults the date to
+    # today, so inferring it pinned every quick-add ever made and the
+    # scheduler could never place that work at all — the opposite of what a
+    # quick add wants. Pinning is a thing the teacher says, not something the
+    # client says by accident.
+    date_locked: bool = False
 
 class TaskUpdate(TaskBase):
     pass
@@ -94,6 +106,7 @@ class TaskResponse(TaskBase):
     actual_completion_date: Optional[date] = None
     completion_notes: str = ''
     focus_minutes: int = 0
+    date_locked: bool = False
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -281,6 +294,12 @@ class SafetyEventResponse(BaseModel):
 # --- Scheduling ---
 class ScheduleRecalcRequest(BaseModel):
     module_id: Optional[int] = None
+
+# --- App configuration ---
+class AppConfigValue(BaseModel):
+    """One settings value. A bare string body would be valid JSON but gives the
+    client nothing to name, and no room to grow the payload later."""
+    value: str = Field(..., max_length=200)
 
 # --- Custom Responses ---
 class StudentDayCourseInfo(BaseModel):
