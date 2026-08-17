@@ -72,13 +72,19 @@ def compute_streak(counts: dict[date, dict[str, int]], today: date) -> int:
     return streak
 
 
-def school_week(today: date, length: int = 4) -> list[date]:
-    """The Monday-to-Thursday week containing `today`.
+def school_week(today: date, length: int = 5) -> list[date]:
+    """The Monday-to-Friday week containing `today`.
 
-    Matches get_school_days, which treats weekday() >= 4 as not a school day.
-    On a Friday, Saturday or Sunday this returns the week just finished rather
-    than jumping forward, so the strip keeps showing the week the student
-    actually worked until the next one starts.
+    Five days, not four, even though get_school_days still treats Friday as a
+    non-school day and will not place work there on its own. A week with
+    Friday missing does not read as a week -- the row just looks truncated, and
+    the reader is left working out why. Friday shows up as a real day that
+    usually happens to be free, which is the truth, and work put there by hand
+    still appears.
+
+    On a Saturday or Sunday this returns the week just finished rather than
+    jumping forward, so the strip keeps showing the week actually worked until
+    the next one starts.
     """
     monday = today.fromordinal(today.toordinal() - today.weekday())
     return [monday.fromordinal(monday.toordinal() + offset) for offset in range(length)]

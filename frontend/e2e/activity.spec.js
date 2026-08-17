@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { login, logout, quickAddTask } from './helpers.js'
 
 test.describe('week strip and streak use real data', () => {
-  test('the activity endpoint returns the current Mon-Thu week', async ({ page }) => {
+  test('the activity endpoint returns the current Mon-Fri week', async ({ page }) => {
     await login(page, 'student')
 
     const activity = await page.evaluate(async () => {
@@ -10,12 +10,14 @@ test.describe('week strip and streak use real data', () => {
       return api.get('/analytics/activity')
     })
 
-    expect(activity.days).toHaveLength(4)
+    expect(activity.days).toHaveLength(5)
     expect(typeof activity.streak).toBe('number')
 
-    // Monday through Thursday of the week containing today.
+    // Monday through Friday of the week containing today. Friday is included
+    // even though the scheduler will not place work there by itself: a week
+    // with a day missing just reads as truncated.
     const weekdays = activity.days.map((d) => new Date(`${d.date}T00:00:00`).getDay())
-    expect(weekdays).toEqual([1, 2, 3, 4])
+    expect(weekdays).toEqual([1, 2, 3, 4, 5])
 
     // The dates it replaced were hardcoded to October 2023.
     for (const day of activity.days) {
@@ -79,11 +81,61 @@ test.describe('week strip and streak use real data', () => {
     const strip = page.locator('.week-strip')
     await expect(strip).toBeVisible()
     await expect(strip).toContainText('Mon')
-    await expect(strip).toContainText('Thu')
+    await expect(strip).toContainText('Fri')
+    await expect(strip.locator('.day')).toHaveCount(5)
 
-    // The streak card is present and shows a number, not the old literal 5
-    // with its unconditional "Keep it up!".
+    // Every cell carries its date; without one, "MON" does not say which
+    // Monday and the row cannot be tied to anything being planned.
+    const dates = await strip.locator('.day .date').allTextContents()
+    expect(dates).toHaveLength(5)
+    for (const d of dates) expect(Number(d)).toBeGreaterThan(0)
+
     const streakCard = page.locator('.kpi-row').getByText('Daily Streak')
     await expect(streakCard).toBeVisible()
+  })
+
+  test('today is unmistakable', async ({ page }) => {
+    await login(page, 'student')
+    await page.goto('/student/quests')
+
+    const today = page.locator('.week-strip .day.is-today')
+    // Only marked when today is a weekday; at a weekend nothing should claim it.
+    const isWeekday = await page.evaluate(() => {
+      const d = new Date().getDay()
+      return d >= 1 && d <= 5
+    })
+
+    if (isWeekday) {
+      await expect(today).toHaveCount(1)
+      await expect(today).toContainText('Today')
+    } else {
+      await expect(today).toHaveCount(0)
+    }
+  })
+
+  test('a day with no work says so instead of showing a bare dash', async ({ page }) => {
+    // The dash was read as missing data, which is exactly what it looked like.
+    await login(page, 'student')
+    await page.goto('/student/quests')
+    await expect(page.locator('.week-strip')).toBeVisible()
+
+    const restCells = page.locator('.week-strip .day.is-rest')
+    if (await restCells.count() > 0) {
+      await expect(restCells.first()).toContainText('Free')
+      await expect(restCells.first()).not.toContainText('—')
+    }
+  })
+
+  test('a future day shows what is waiting, not "0 done"', async ({ page }) => {
+    // Wednesday reading "0/2" on Monday invited the reading that something had
+    // already gone wrong, when the day simply had not happened.
+    await login(page, 'student')
+    await page.goto('/student/quests')
+    await expect(page.locator('.week-strip')).toBeVisible()
+
+    const upcoming = page.locator('.week-strip .day.is-upcoming')
+    for (let i = 0; i < await upcoming.count(); i += 1) {
+      await expect(upcoming.nth(i)).not.toContainText('/')
+    }
   })
 })
