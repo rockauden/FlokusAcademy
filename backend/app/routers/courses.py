@@ -10,8 +10,21 @@ from app.repository import ProgramRepository
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
 @router.get("/", response_model=List[CourseResponse])
-async def list_courses(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_active_user)):
-    return await ProgramRepository.list(db, tenant_id=user.tenant_id)
+async def list_courses(
+    include_inactive: bool = False,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_active_user),
+):
+    """Active programs by default — that is what every picker wants.
+
+    The program manager asks for the inactive ones too. DELETE deactivates
+    rather than deletes, so without this a deactivated program vanishes from
+    the only screen that could bring it back, and the one-click undo becomes a
+    database edit.
+    """
+    return await ProgramRepository.list(
+        db, tenant_id=user.tenant_id, active_only=not include_inactive
+    )
 
 @router.post("/", response_model=CourseResponse)
 async def create_course(course: CourseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)):

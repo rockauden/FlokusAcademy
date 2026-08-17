@@ -1,11 +1,35 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, watch } from 'vue'
+import { useUnitsStore } from '../../stores/units'
 
 const props = defineProps({
   courses: { type: Array, default: () => [] },
   initialData: { type: Object, default: () => null }
 })
 const emit = defineEmits(['submit', 'cancel'])
+
+/**
+ * Units for the unit picker.
+ *
+ * Every lesson authored through this form used to arrive with unit_id = NULL,
+ * because the form had no field for it. That is not a cosmetic gap:
+ * rolling_scheduler.py groups by (student_id, lesson.unit_id), so every
+ * unit-less lesson across every subject collapsed into a single group, and the
+ * scheduler advances one school day per lesson within a group. Quick-add five
+ * tasks, press Recalculate, and they spread across five consecutive school
+ * days regardless of subject. The grouping is correct when units are
+ * populated; it was silently destructive in the only state the UI could
+ * produce.
+ */
+const unitsStore = useUnitsStore()
+
+// Fetched per program rather than all at once. The picker only ever shows one
+// program's units, and the store is shared with the unit manager — narrowing
+// the fetch keeps the two screens from overwriting each other's list.
+const unitsForCourse = computed(() => {
+  if (!form.value.course_id) return []
+  return unitsStore.units.filter(u => u.course_id === Number(form.value.course_id))
+})
 
 /**
  * Local date as YYYY-MM-DD. Deliberately not toISOString().slice(0, 10),
@@ -22,8 +46,14 @@ function todayISO() {
 const form = ref(props.initialData || {
   title: '',
   course_id: '',
+  // The API still says module_id; internally it is Lesson.unit_id.
+  module_id: '',
   task_type: 'lesson',
   dependency_mode: 'independent',
+  // 'core' | 'standard' | 'optional'. How pace changes without curriculum
+  // changing — accelerating releases core only and leaves the rest.
+  priority: 'standard',
+  sequence_order: 0,
   estimated_minutes: 15,
   resource_url: '',
   workbook_pages: '',
@@ -46,11 +76,21 @@ const form = ref(props.initialData || {
 
 const error = ref('')
 
+// A unit belongs to exactly one program, so a unit chosen under the old
+// program is wrong the moment the program changes. Clearing it is the honest
+// outcome — silently keeping it would attach the lesson to another subject's
+// unit, and the scheduler would pace it there.
+watch(() => form.value.course_id, (next, previous) => {
+  if (previous !== undefined && next !== previous) form.value.module_id = ''
+  if (next !== '' && next !== null && next !== undefined) unitsStore.fetchUnits(next)
+}, { immediate: true })
+
 // Blank inputs come out of the DOM as '', but the API types these as
 // Optional[date] / Optional[int] — '' is not a valid empty value for either
 // and fails validation with a 422. Leaving the date blank is the normal case
-// for a quick add, so this has to be normalised before sending.
-const NULL_WHEN_BLANK = ['scheduled_date', 'school_day_offset', 'day_of_week_hint']
+// for a quick add, so this has to be normalised before sending. module_id is
+// on the list for the same reason: "no unit" is a legitimate quick-add.
+const NULL_WHEN_BLANK = ['scheduled_date', 'school_day_offset', 'day_of_week_hint', 'module_id']
 
 function submit() {
   // course_id is required by the API, and title is only marked required in
@@ -89,7 +129,18 @@ function submit() {
           <option v-for="c in courses" :key="c.id" :value="c.id">{{ c.emoji }} {{ c.title }}</option>
         </select>
       </div>
-      
+
+      <div class="form-group">
+        <label>Unit</label>
+        <select v-model="form.module_id" class="unit-picker" :disabled="!form.course_id">
+          <option value="">No unit (quick add)</option>
+          <option v-for="u in unitsForCourse" :key="u.id" :value="u.id">{{ u.title }}</option>
+        </select>
+        <p v-if="form.course_id && unitsForCourse.length === 0" class="text-muted hint">
+          This program has no units yet — create them under Programs &amp; Units.
+        </p>
+      </div>
+
       <div class="form-group">
         <label>Task Type</label>
         <select v-model="form.task_type">
@@ -98,7 +149,7 @@ function submit() {
           <option value="project">Project</option>
         </select>
       </div>
-      
+
       <div class="form-group">
         <label>Dependency</label>
         <select v-model="form.dependency_mode" class="dependency-mode">
@@ -110,6 +161,20 @@ function submit() {
           <option value="teacher_led">With Teacher (Dad)</option>
           <option value="live_scheduled">Live / Scheduled Session</option>
         </select>
+      </div>
+
+      <div class="form-group">
+        <label>Priority</label>
+        <select v-model="form.priority">
+          <option value="core">Core — always released</option>
+          <option value="standard">Standard — normal pace</option>
+          <option value="optional">Optional — only if pace allows</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Sequence Order</label>
+        <input type="number" v-model.number="form.sequence_order" />
       </div>
 
       <div class="form-group">

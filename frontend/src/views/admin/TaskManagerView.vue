@@ -123,7 +123,10 @@ async function submitBulk() {
                 <td>{{ task.task_type }}</td>
                 <td>{{ task.estimated_minutes }}</td>
                 <td>{{ task.xp_reward }}</td>
-                <td>{{ ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'][task.day_of_week_hint] || 'None' }}</td>
+                <!-- All seven days: the hint widened from 0..3 to 0..6 when
+                     Fri/Sat/Sun became optional days rather than forbidden
+                     ones, and a truncated list rendered a Saturday as "None". -->
+                <td>{{ ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][task.day_of_week_hint] || 'None' }}</td>
               </tr>
             </tbody>
           </table>

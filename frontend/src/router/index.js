@@ -21,6 +21,10 @@ const routes = [
     meta: { requiresAuth: true, role: 'teacher' },
     children: [
       { path: '', redirect: '/admin/tasks' },
+      // Units are a panel inside the program manager rather than a route of
+      // their own: a unit is only meaningful under a program, and a standalone
+      // /admin/units would have to start by asking which one.
+      { path: 'programs', component: () => import('../views/admin/ProgramManagerView.vue') },
       { path: 'tasks', component: () => import('../views/admin/TaskManagerView.vue') },
       { path: 'schedule', component: () => import('../views/admin/ScheduleView.vue') },
       { path: 'calendar', component: () => import('../views/admin/CalendarManagerView.vue') },
