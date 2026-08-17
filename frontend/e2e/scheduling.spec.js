@@ -17,6 +17,60 @@ async function stageLesson(page, title, extra = {}) {
   })
 }
 
+test.describe('a partial update leaves the rest of the lesson alone', () => {
+  test('sending only a title does not reset xp, duration or date', async ({ page }) => {
+    // Regression, B5. TaskUpdate used to inherit TaskBase, where every field
+    // but `title` has a default, and update_task called model_dump() — which
+    // returns those defaults for fields the client never sent. Renaming a
+    // lesson therefore reset its XP to 10, its duration to 30, its type to
+    // "reading", and its scheduled_date to None. That last one removed the
+    // assignment from the student's day outright.
+    await login(page, 'teacher')
+    const scheduled = nextWeekday(TUESDAY, { skip: 4 })
+
+    const created = await apiCall(page, 'post', '/tasks/', {
+      title: `Partial update ${Date.now()}`,
+      course_id: 1,
+      xp_reward: 50,
+      estimated_minutes: 45,
+      task_type: 'quiz',
+      scheduled_date: scheduled,
+    })
+    expect(created.xp_reward).toBe(50)
+
+    const updated = await apiCall(page, 'put', `/tasks/${created.id}`, { title: 'Renamed only' })
+
+    expect(updated.title).toBe('Renamed only')
+    expect(updated.xp_reward).toBe(50)
+    expect(updated.estimated_minutes).toBe(45)
+    expect(updated.task_type).toBe('quiz')
+    expect(updated.scheduled_date).toBe(scheduled)
+  })
+
+  test('an explicit null still clears the date', async ({ page }) => {
+    // exclude_unset on its own cannot tell "field absent" from "field set to
+    // null", and clearing a date deliberately has to stay possible — that is
+    // how a lesson goes back to being staged rather than scheduled.
+    await login(page, 'teacher')
+
+    const created = await apiCall(page, 'post', '/tasks/', {
+      title: `Clearable date ${Date.now()}`,
+      course_id: 1,
+      scheduled_date: nextWeekday(TUESDAY, { skip: 4 }),
+      date_locked: true,
+    })
+    expect(created.scheduled_date).not.toBeNull()
+    expect(created.date_locked).toBe(true)
+
+    const cleared = await apiCall(page, 'put', `/tasks/${created.id}`, { scheduled_date: null })
+    expect(cleared.scheduled_date).toBeNull()
+    // A pin needs a date to pin to. Clearing the date releases the assignment
+    // back to the scheduler; leaving the flag set would strand it, since the
+    // scheduler skips locked rows and would never place an undated one.
+    expect(cleared.date_locked).toBe(false)
+  })
+})
+
 test.describe('core, optional and blocked days', () => {
   test('a pinned Saturday survives a sick day', async ({ page }) => {
     // B6/B10, and the reason date_locked exists. routers/schedule.py fires a

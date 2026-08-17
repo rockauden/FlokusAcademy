@@ -216,12 +216,36 @@ async def update_task(id: int, task_data: TaskUpdate, db: AsyncSession = Depends
 
     # Editing a "task" edits the underlying lesson — it is curriculum content.
     # scheduled_date is the one field that belongs to this student's instance.
-    payload = task_data.model_dump()
+    #
+    # exclude_unset is what keeps this from being a data-loss bug: without it,
+    # model_dump() returns a default for every field the client did not send,
+    # so renaming a lesson also reset its XP, its duration and its date.
+    payload = task_data.model_dump(exclude_unset=True)
+
+    # exclude_unset alone cannot tell "field absent" from "field explicitly
+    # null", and both matter here: absent means leave the date alone, null
+    # means clear it deliberately and hand the assignment back to the
+    # scheduler. Checking for the key rather than the value is the difference.
+    scheduled_date_provided = 'scheduled_date' in payload
     scheduled_date = payload.pop('scheduled_date', None)
+    date_locked = payload.pop('date_locked', None)
+
     for key, value in payload.items():
         if hasattr(a.lesson, key):
             setattr(a.lesson, key, value)
-    a.scheduled_date = scheduled_date
+
+    if scheduled_date_provided:
+        a.scheduled_date = scheduled_date
+
+    if date_locked is not None:
+        a.date_locked = bool(date_locked)
+
+    # A pin needs something to pin to. Clearing the date releases the
+    # assignment back to the scheduler, so leaving the flag set would strand
+    # it: the scheduler skips locked rows, and an undated locked row is one it
+    # would never place and nobody would ever see.
+    if a.scheduled_date is None:
+        a.date_locked = False
 
     await db.commit()
     refreshed = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)

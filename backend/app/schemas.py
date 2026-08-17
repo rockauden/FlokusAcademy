@@ -95,8 +95,40 @@ class TaskCreate(TaskBase):
     # client says by accident.
     date_locked: bool = False
 
-class TaskUpdate(TaskBase):
-    pass
+class TaskUpdate(BaseModel):
+    """Every field optional, and deliberately not inheriting TaskBase.
+
+    TaskBase gives every field but `title` a default, so a PUT of
+    {"title": "Ch 4"} used to arrive at update_task as a complete object —
+    model_dump() returns defaults for unset fields — and reset xp_reward to 10,
+    estimated_minutes to 30, task_type to "reading" and scheduled_date to None.
+    That last one removed the assignment from the student's day outright, since
+    the day view filters `scheduled_date <= today` and NULL <= today is NULL.
+
+    With every field defaulting to None, model_dump(exclude_unset=True) in the
+    router sees only what the client actually sent. The distinction that still
+    needs care is "absent" versus "explicitly null" — clearing a date on
+    purpose has to stay possible, so the router checks for the key's presence
+    rather than the value's truthiness.
+    """
+    title: Optional[str] = None
+    description: Optional[str] = None
+    task_type: Optional[str] = None
+    resource_url: Optional[str] = None
+    resource_path: Optional[str] = None
+    workbook_pages: Optional[str] = None
+    sequence_order: Optional[int] = None
+    school_day_offset: Optional[int] = None
+    scheduled_date: Optional[date] = None
+    day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
+    dependency_mode: Optional[str] = None
+    estimated_minutes: Optional[int] = None
+    xp_reward: Optional[int] = None
+    is_boss_fight: Optional[bool] = None
+    medium: Optional[str] = None
+    ufa_eligible: Optional[bool] = None
+    ufa_hours_credit: Optional[float] = None
+    date_locked: Optional[bool] = None
 
 class TaskResponse(TaskBase):
     id: int
