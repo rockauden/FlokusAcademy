@@ -59,6 +59,19 @@ class Unit(Base):
     week_start: Mapped[int] = mapped_column(Integer, default=1)
     week_end: Mapped[int] = mapped_column(Integer, default=1)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    # 'planned' | 'active' | 'completed' | 'abandoned'.
+    #
+    # The rolling scheduler paces only 'active' units. That is what makes
+    # releasing a real action rather than a wish: a whole year can be imported
+    # with every unit 'planned', and the student's day stays empty until one is
+    # flipped to 'active'. Without it, the first sick day — which triggers a
+    # full-tenant recalculation — would date every lesson in the database at
+    # once and fill a nine-year-old's morning with every subject's next lesson.
+    #
+    # It is also what makes a mid-year Beast Academy Level 2 → 3 jump a status
+    # change instead of a migration: Level 3 units are imported ahead of time
+    # as 'planned' and cost nothing sitting there.
+    status: Mapped[str] = mapped_column(String(20), default='active', server_default='active')
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -89,6 +102,10 @@ class Lesson(Base):
     day_of_week_hint: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # 'independent' | 'teacher_led' | 'live_scheduled' — see schemas.DependencyMode.
     dependency_mode: Mapped[str] = mapped_column(String, default='independent')
+    # 'core' | 'standard' | 'optional'. Changes pace without changing
+    # curriculum: accelerating releases `core` only and leaves the rest
+    # unreleased, so the skipped material is still there to come back to.
+    priority: Mapped[str] = mapped_column(String(12), default='standard', server_default='standard')
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30)
     xp_reward: Mapped[int] = mapped_column(Integer, default=10)
     is_boss_fight: Mapped[bool] = mapped_column(Boolean, default=False)

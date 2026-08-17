@@ -167,12 +167,28 @@ class AssignmentRepository:
 
     @staticmethod
     async def for_scheduling(db: AsyncSession, tenant_id: int, unit_id: Optional[int] = None) -> Sequence[Assignment]:
-        """Open + completed assignments with their lesson, for the rolling scheduler."""
+        """Open + completed assignments with their lesson, for the rolling scheduler.
+
+        Only units with status 'active' are paced. This is the safety valve for
+        the whole curriculum migration: a full-year import creates hundreds of
+        undated assignments across ~26 units, and adding a single sick day
+        fires reschedule_from_today across the entire tenant. Without this
+        clause that one click would date every unit at once and hand a
+        nine-year-old every subject's next lesson on the same morning.
+
+        The outer join and the is_(None) branch are both load-bearing. A lesson
+        with no unit — a quick add — has nothing to check a status against, and
+        an inner join would silently drop it from scheduling altogether.
+        """
         query = (
             select(Assignment)
             .options(_WITH_LESSON)
             .join(Lesson, Assignment.lesson_id == Lesson.id)
-            .where(Assignment.tenant_id == tenant_id)
+            .outerjoin(Unit, Lesson.unit_id == Unit.id)
+            .where(
+                Assignment.tenant_id == tenant_id,
+                or_(Lesson.unit_id.is_(None), Unit.status == 'active'),
+            )
         )
         if unit_id is not None:
             query = query.where(Lesson.unit_id == unit_id)

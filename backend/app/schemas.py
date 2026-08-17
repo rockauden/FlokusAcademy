@@ -11,6 +11,19 @@ from pydantic import BaseModel, ConfigDict, Field
 # Typing it here makes a bad value a 422 instead of a silent no-op.
 DependencyMode = Literal['independent', 'teacher_led', 'live_scheduled']
 
+# 'planned' | 'active' | 'completed' | 'abandoned'. A level change within a
+# program is a status change on units, not a new program — Beast Academy Level
+# 3 units are imported as `planned` and sit unreleased until one is flipped to
+# `active`. Only `active` units are paced by the scheduler, which is what makes
+# activating a unit the act of releasing it.
+UnitStatus = Literal['planned', 'active', 'completed', 'abandoned']
+
+# 'core' | 'standard' | 'optional'. How pace changes without curriculum
+# changing: accelerating means releasing `core` only and leaving the rest
+# unreleased, never deleting. For Beast Academy: guide chapter = core, practice
+# book = standard, puzzlers = optional.
+LessonPriority = Literal['core', 'standard', 'optional']
+
 # --- Auth ---
 class TokenResponse(BaseModel):
     access_token: str
@@ -52,6 +65,7 @@ class ModuleBase(BaseModel):
     week_start: int = 1
     week_end: int = 1
     sort_order: int = 0
+    status: UnitStatus = 'active'
     is_active: bool = True
 
 class ModuleCreate(ModuleBase):
@@ -84,6 +98,7 @@ class TaskBase(BaseModel):
     # Saturday" — and rejecting it made the calendar model unexpressible.
     day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
     dependency_mode: DependencyMode = 'independent'
+    priority: LessonPriority = 'standard'
     estimated_minutes: int = 30
     xp_reward: int = 10
     is_boss_fight: bool = False
@@ -131,6 +146,7 @@ class TaskUpdate(BaseModel):
     scheduled_date: Optional[date] = None
     day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
     dependency_mode: Optional[DependencyMode] = None
+    priority: Optional[LessonPriority] = None
     estimated_minutes: Optional[int] = None
     xp_reward: Optional[int] = None
     is_boss_fight: Optional[bool] = None

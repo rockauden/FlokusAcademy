@@ -49,6 +49,7 @@ def _merge(a: Assignment) -> dict:
         "school_day_offset": lesson.school_day_offset,
         "day_of_week_hint": lesson.day_of_week_hint,
         "dependency_mode": lesson.dependency_mode,
+        "priority": lesson.priority,
         "estimated_minutes": lesson.estimated_minutes,
         "xp_reward": lesson.xp_reward,
         "is_boss_fight": lesson.is_boss_fight,
