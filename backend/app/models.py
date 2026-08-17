@@ -87,6 +87,7 @@ class Lesson(Base):
     school_day_offset: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     # 0=Mon … 6=Sun. A Fri/Sat/Sun hint is a deliberate placement, not an error.
     day_of_week_hint: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    # 'independent' | 'teacher_led' | 'live_scheduled' — see schemas.DependencyMode.
     dependency_mode: Mapped[str] = mapped_column(String, default='independent')
     estimated_minutes: Mapped[int] = mapped_column(Integer, default=30)
     xp_reward: Mapped[int] = mapped_column(Integer, default=10)

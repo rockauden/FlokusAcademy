@@ -101,9 +101,14 @@ function submit() {
       
       <div class="form-group">
         <label>Dependency</label>
-        <select v-model="form.dependency_mode">
+        <select v-model="form.dependency_mode" class="dependency-mode">
           <option value="independent">Independent</option>
-          <option value="with_teacher">With Teacher (Dad)</option>
+          <!-- Was `with_teacher`, which matched no branch in the scheduler: the
+               lesson never got a date, yet still burned a slot in the sequence.
+               The schema now rejects anything outside the three canonical
+               values, so a drift like that becomes a 422 rather than silence. -->
+          <option value="teacher_led">With Teacher (Dad)</option>
+          <option value="live_scheduled">Live / Scheduled Session</option>
         </select>
       </div>
 

@@ -1,6 +1,15 @@
 from datetime import datetime, date
-from typing import Optional, List, Dict, Any
+from typing import Literal, Optional, List, Dict, Any
 from pydantic import BaseModel, ConfigDict, Field
+
+# The one spelling of this vocabulary.
+#
+# It previously existed in three: the form said `with_teacher`, the scheduler
+# handled `teacher_led`, and the schema typed it as a bare `str` so nothing
+# caught the mismatch. A lesson created as `with_teacher` matched no scheduler
+# branch, never got a date, and still burned a slot in the sequence.
+# Typing it here makes a bad value a 422 instead of a silent no-op.
+DependencyMode = Literal['independent', 'teacher_led', 'live_scheduled']
 
 # --- Auth ---
 class TokenResponse(BaseModel):
@@ -74,7 +83,7 @@ class TaskBase(BaseModel):
     # hint naming one is a deliberate statement — "this lesson belongs on a
     # Saturday" — and rejecting it made the calendar model unexpressible.
     day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
-    dependency_mode: str = 'independent'
+    dependency_mode: DependencyMode = 'independent'
     estimated_minutes: int = 30
     xp_reward: int = 10
     is_boss_fight: bool = False
@@ -121,7 +130,7 @@ class TaskUpdate(BaseModel):
     school_day_offset: Optional[int] = None
     scheduled_date: Optional[date] = None
     day_of_week_hint: Optional[int] = Field(None, ge=0, le=6)
-    dependency_mode: Optional[str] = None
+    dependency_mode: Optional[DependencyMode] = None
     estimated_minutes: Optional[int] = None
     xp_reward: Optional[int] = None
     is_boss_fight: Optional[bool] = None

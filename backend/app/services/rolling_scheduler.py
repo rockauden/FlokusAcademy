@@ -24,6 +24,13 @@ DEFAULT_ACADEMIC_YEAR_START = date(2026, 8, 17)
 
 WEEKDAY_NUMBERS = {'mon': 0, 'tue': 1, 'wed': 2, 'thu': 3, 'fri': 4, 'sat': 5, 'sun': 6}
 
+# Every dependency_mode the scheduler knows how to place. Kept next to the
+# branches that consume it so adding a fourth mode without teaching the
+# scheduler about it is a loud failure rather than a silent one — see the
+# `else` in compute_rolling_schedule.
+KNOWN_DEPENDENCY_MODES = ('independent', 'teacher_led', 'live_scheduled')
+
+
 def parse_school_days(raw: str | None) -> frozenset[int]:
     """Turn `app_config.school_days` ("Mon,Tue,Wed,Thu") into weekday numbers.
 
@@ -152,6 +159,20 @@ def compute_rolling_schedule(
         elif lesson.dependency_mode == 'live_scheduled':
             if not assignment.scheduled_date:
                 assignment.scheduled_date = current_school_day
+
+        else:
+            # An unrecognised mode used to fall through silently: no date was
+            # ever assigned, yet the cursor below still advanced, so the lesson
+            # burned a slot in the sequence and never appeared for the student.
+            # That is how `with_teacher` hid for as long as it did. Schemas now
+            # reject unknown values, so reaching here means legacy rows —
+            # loudly enough to be found, without taking the recalculation down.
+            logger.error(
+                "Lesson %r (%r) has dependency_mode=%r, which the scheduler does not know how to "
+                "place; leaving it unscheduled. Known modes: %s.",
+                lesson.id, lesson.title, lesson.dependency_mode, ', '.join(KNOWN_DEPENDENCY_MODES),
+            )
+            continue
 
         # Advance the school day for the next sequential lesson
         current_school_day = get_school_days(

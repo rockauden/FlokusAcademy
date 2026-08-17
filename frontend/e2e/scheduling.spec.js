@@ -71,6 +71,36 @@ test.describe('a partial update leaves the rest of the lesson alone', () => {
   })
 })
 
+test.describe('one dependency_mode vocabulary', () => {
+  test('the form value the UI sends is one the scheduler handles', async ({ page }) => {
+    // B6. The form offered `with_teacher`; the scheduler branched on
+    // `teacher_led`. A lesson saved as `with_teacher` matched no branch, never
+    // got a date, and still burned a slot in the sequence.
+    await login(page, 'teacher')
+    await page.goto('/admin/tasks')
+    await page.getByRole('button', { name: 'Quick Add' }).click()
+
+    // By class, not by index: this form grows a select or two in the same
+    // phase, and an index-based locator would start asserting on the wrong one
+    // while still passing.
+    const dependency = page.locator('.task-form .dependency-mode')
+    await expect(dependency.locator('option[value="teacher_led"]')).toHaveCount(1)
+    await expect(dependency.locator('option[value="with_teacher"]')).toHaveCount(0)
+  })
+
+  test('an unknown mode is a 422, not a silent no-op', async ({ page }) => {
+    await login(page, 'teacher')
+
+    const message = await apiError(page, 'post', '/tasks/', {
+      title: 'Bad dependency mode',
+      course_id: 1,
+      dependency_mode: 'with_teacher',
+    })
+
+    expect(message).toContain('dependency_mode')
+  })
+})
+
 test.describe('core, optional and blocked days', () => {
   test('a pinned Saturday survives a sick day', async ({ page }) => {
     // B6/B10, and the reason date_locked exists. routers/schedule.py fires a

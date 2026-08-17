@@ -56,7 +56,7 @@ onUnmounted(() => clearTimeout(recovery))
         <span class="badge" :class="task.medium === 'offline' ? 'badge-orange' : 'badge-purple'">
           {{ task.medium === 'offline' ? '📖' : '💻' }}
         </span>
-        <span v-if="task.dependency_mode === 'with_teacher'" class="badge badge-orange">Wait for Dad</span>
+        <span v-if="task.dependency_mode === 'teacher_led'" class="badge badge-orange">Wait for Dad</span>
       </div>
     </div>
     
