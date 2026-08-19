@@ -1,5 +1,9 @@
-"""
+r"""
 Back up the live school database, off this machine.
+
+(The `r` on this docstring matters: the Windows paths below contain `\s` and
+`\e`, which Python 3.12 reads as invalid escape sequences and warns about every
+time the script runs. A raw string takes the backslashes literally.)
 
 WHY THIS EXISTS
 ---------------
