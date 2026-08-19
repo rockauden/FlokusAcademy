@@ -60,17 +60,6 @@ def inject_css():
             border-color: #404f85 !important;
         }
 
-        /* Boss Fight Glowing Card */
-        div[data-testid="stVerticalBlockBorderWrapper"]:has(div.boss-fight-marker) {
-            background: linear-gradient(135deg, #2d164d 0%, #170b29 100%) !important;
-            border: 2px solid #9f7aea !important;
-            box-shadow: 0 0 15px rgba(159, 122, 234, 0.2) !important;
-        }
-        div[data-testid="stVerticalBlockBorderWrapper"]:has(div.boss-fight-marker):hover {
-            box-shadow: 0 0 25px rgba(159, 122, 234, 0.4) !important;
-            border-color: #b794f4 !important;
-        }
-
         /* Button Styling */
         .stButton > button {
             border-radius: 8px !important;
@@ -184,16 +173,6 @@ def inject_css():
         }
 
         /* Mission Step Indicator Row */
-        .mission-step-active {
-            color: #63b3ed !important;
-            font-weight: 700 !important;
-        }
-        .mission-step-done {
-            color: #22c55e !important;
-            font-weight: 700 !important;
-            text-decoration: line-through !important;
-            opacity: 0.7 !important;
-        }
 
         /* Completed Mission Card */
         .mission-complete-card {

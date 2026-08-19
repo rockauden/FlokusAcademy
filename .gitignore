@@ -25,3 +25,8 @@ scratch/
 # OS specific files
 .DS_Store
 Thumbs.db
+# Streamlit secrets anywhere in the tree (the rule above only matched the root)
+**/.streamlit/secrets.toml
+
+# SQLite point-in-time backups kept beside the live file
+*.db.*-backup

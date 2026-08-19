@@ -1,345 +1,434 @@
+"""
+Task Manager -- the only place curriculum is added, scheduled or edited.
+
+Three tabs, three jobs, no overlap:
+
+    Import Curriculum   a whole program from a spreadsheet
+    Quick Add           one lesson, right now
+    Schedule            move, edit or delete what is already there
+
+That replaces the previous three-way split, where the same job could be done
+from a Quick Add form, from plus-buttons buried in each column of the weekly
+grid, and from a "Master Curriculum Scheduler" that regenerated the entire year
+from hardcoded Python tables. The last one is deleted: it rewrote 677
+assignments on one click, and because the plan lived in curriculum_data.py
+rather than a file, changing the curriculum meant editing source code. The year
+it used to generate now lives in the database and exports to a spreadsheet, so
+nothing was lost by removing it.
+"""
+
 import streamlit as st
-import pandas as pd
 from datetime import date, datetime, timedelta
+
 import database
 import config
-from ai_tutor import parse_and_execute_schedule_command
-import curriculum_data
+import school_year
+import curriculum_io
 
-st.title("📝 Task Management & Lesson Scheduler")
-st.caption("Streamlined workflow for scheduling Sonny's homeschooling curriculum and quests.")
+st.title("📝 Task Manager")
+st.caption("Import a curriculum, add a one-off lesson, or adjust the schedule.")
 
-# --- THREE CLEAN WORKFLOW TABS ---
-tab_quick, tab_weekly, tab_advanced = st.tabs([
-    "⚡ Quick Add Lesson", 
-    "📅 Weekly Visual Schedule", 
-    "⚙️ Master Curriculum Scheduler (Tier 1 & Tier 2)"
+tab_import, tab_quick, tab_schedule = st.tabs([
+    "📥 Import Curriculum",
+    "⚡ Quick Add Lesson",
+    "🗓️ Schedule",
 ])
 
-# ==========================================
-# TAB 1: QUICK ADD LESSON
-# ==========================================
-with tab_quick:
-    st.subheader("⚡ Quick Add Single Lesson")
-    st.write("Schedule an individual assignment for Sonny in seconds.")
-    
-    with st.form("quick_task_form", clear_on_submit=True):
-        col_q1, col_q2 = st.columns([0.6, 0.4])
-        with col_q1:
-            task_title = st.text_input("Lesson / Task Description*", placeholder="e.g., Chapter 2 Pages 15-20 or Copywork passage")
-        with col_q2:
-            task_category = st.selectbox("Curriculum Spine / Subject*", list(config.SUBJECT_EMOJIS.keys()))
-            
-        col_q3, col_q4, col_q5, col_q6, col_q7 = st.columns([0.25, 0.25, 0.2, 0.15, 0.15])
-        with col_q3:
-            scheduled_date = st.date_input("Scheduled Date", value=date.today())
-        with col_q4:
-            task_medium = st.selectbox("Medium*", ["Offline", "Online"], help="Offline (Books, Kits, Paper) vs Online (Apps, Screen)")
-        with col_q5:
-            task_video = st.text_input("Optional Video URL", placeholder="https://youtube.com/...")
-        with col_q6:
-            task_xp = st.number_input("XP Reward", min_value=5, max_value=500, value=10, step=5)
-        with col_q7:
-            st.write("") # spacing
-            st.write("")
-            is_boss_fight = st.checkbox("⭐ Boss", value=False, help="Double XP Bonus")
-            
-        submitted_quick = st.form_submit_button("🚀 Schedule Lesson Now", use_container_width=True)
-        
-        if submitted_quick:
-            if not task_title.strip():
-                st.error("⚠️ Task Description cannot be empty!")
+DAY_ORDER = ["Mon", "Tue", "Wed", "Thu", "Fri"]
+
+
+# ==========================================================================
+# TAB 1 -- IMPORT CURRICULUM
+# ==========================================================================
+with tab_import:
+    st.subheader("📥 Import a curriculum")
+
+    year = school_year.summary()
+    st.caption(
+        f"School year **{year['start']:%b %d, %Y} – {year['end']:%b %d, %Y}** · "
+        f"{year['weeks']} weeks · {year['school_days']} school days · "
+        f"{year['days_off']} days off. Imports schedule around the days off "
+        f"automatically — nothing can land on a break."
+    )
+
+    with st.expander("What the file needs to look like", expanded=False):
+        st.markdown(
+            "One **sheet per program**, one **row per lesson**, in teaching "
+            "order. Only `program` and `title` are required; everything else "
+            "has a sensible default.\n\n"
+            "**There is no date column, on purpose.** The file says *what* to "
+            "teach and in what order. You say *when* — a start date and which "
+            "weekdays the program runs — and Flokus schedules it against the "
+            "school calendar. That way the file and the calendar can never "
+            "disagree.\n\n"
+            "**Weekly habits go on a `Routines` sheet**, listed once with a "
+            "`day_of_week`, not repeated 36 times. Chess on Wednesdays is one "
+            "row.\n\n"
+            "**Re-importing is safe.** Fix a typo in Excel, load the same file "
+            "again, and matching rows update instead of duplicating. Work "
+            "Sonny has already completed is never touched."
+        )
+        st.code("program | unit | title | task_type | xp_reward | medium | resource_url",
+                language="text")
+
+    st.markdown("##### 1. Upload")
+    upload = st.file_uploader("Curriculum spreadsheet (.xlsx or .csv)",
+                              type=["xlsx", "xlsm", "csv"], key="curric_upload")
+
+    if upload is not None:
+        raw = upload.getvalue()
+        lessons, routines, notes = curriculum_io.read_rows(upload.name, raw)
+        lessons, routines, errors, warnings = curriculum_io.validate(lessons, routines)
+
+        for n in notes:
+            st.info(n)
+
+        if errors:
+            st.error(f"**{len(errors)} problem(s) found — nothing was imported.** "
+                     "Fix these and upload again.")
+            # Row-numbered so the message points at a real place in the file.
+            for e in errors[:40]:
+                st.markdown(f"- {e}")
+            if len(errors) > 40:
+                st.caption(f"…and {len(errors) - 40} more.")
+        else:
+            if warnings:
+                with st.expander(f"⚠️ {len(warnings)} warning(s) — import can still proceed"):
+                    for w in warnings:
+                        st.markdown(f"- {w}")
+
+            by_program = {}
+            for r in lessons:
+                by_program.setdefault(r.get("program", "?"), []).append(r)
+            routine_programs = sorted({r.get("program", "?") for r in routines})
+
+            st.success(
+                f"✅ Read **{len(lessons)} lessons** across "
+                f"{len(by_program)} program(s)"
+                + (f" and **{len(routines)} routine definition(s)**." if routines else ".")
+            )
+
+            st.markdown("##### 2. Choose what to import")
+            choices = sorted(by_program) + (["Routines only"] if routines else [])
+            if not choices:
+                st.warning("Nothing importable in this file.")
+                st.stop()
+
+            picked = st.selectbox(
+                "Program", choices,
+                help="One program at a time — each has its own weekly rhythm."
+            )
+
+            if picked == "Routines only":
+                picked_lessons, picked_routines = [], routines
             else:
-                boss_int = 1 if is_boss_fight else 0
-                database.add_task_to_db(task_title.strip(), task_category, task_video.strip() if task_video else "", task_xp, scheduled_date, boss_int, task_medium)
-                st.success(f"🎉 Scheduled **{task_title}** [{task_medium}] for {task_category} on {scheduled_date.strftime('%A, %b %d')}!")
+                picked_lessons = by_program[picked]
+                picked_routines = [r for r in routines if r.get("program") == picked]
+
+            col_a, col_b = st.columns([0.55, 0.45])
+            with col_a:
+                days = st.multiselect(
+                    "Which days does this program run?",
+                    DAY_ORDER, default=["Mon", "Tue", "Wed", "Thu"],
+                    help="Mon–Thu carry new material. Friday is review and "
+                         "catch-up — putting new curriculum there is usually a "
+                         "mistake."
+                )
+            with col_b:
+                # Until Sonny has actually completed something, the sensible
+                # default is the first day of the year, not today -- otherwise
+                # a full-year import on day two reports that one lesson won't
+                # fit, which is technically true and completely unhelpful.
+                any_done = any(done for _, _, done, _, _
+                               in database.count_tasks_by_category())
+                start = st.date_input(
+                    "Start on",
+                    value=max(date.today(), year["start"]) if any_done
+                    else year["start"],
+                    min_value=year["start"], max_value=year["end"]
+                )
+
+            if "Fri" in days:
+                st.warning("Friday is the review and catch-up day. New "
+                           "curriculum there will push against the light-Friday "
+                           "design.")
+
+            replace = st.checkbox(
+                f"Replace this program's existing unfinished assignments from "
+                f"{start:%b %d} onward",
+                value=True,
+                help="Leave on when re-loading a corrected plan. Turn off to "
+                     "add alongside what is already scheduled. Completed work "
+                     "is never removed either way."
+            )
+
+            weekday_nums = [school_year.WEEKDAY_NAMES[d] for d in days]
+            if not weekday_nums:
+                st.warning("Pick at least one day.")
+            else:
+                pv = curriculum_io.preview(picked_lessons, picked_routines,
+                                           weekday_nums, start,
+                                           replace_program=replace)
+
+                st.markdown("##### 3. Preview")
+                if pv["short_by"]:
+                    st.error(
+                        f"**{pv['short_by']} lessons won't fit.** There are only "
+                        f"{pv['lesson_slots']} school days on "
+                        f"{', '.join(days)} between {start:%b %d} and the end of "
+                        f"the year, but this program has {pv['lesson_count']} "
+                        f"lessons. Start earlier or add a weekday."
+                    )
+                else:
+                    m1, m2, m3 = st.columns(3)
+                    m1.metric("Lessons", pv["lesson_count"])
+                    m2.metric("First", f"{pv['lesson_first']:%b %d}" if pv["lesson_first"] else "—")
+                    m3.metric("Last", f"{pv['lesson_last']:%b %d, %Y}" if pv["lesson_last"] else "—")
+
+                    if pv["routines"]:
+                        st.caption("Routines: " + " · ".join(
+                            f"{t} ×{n}" for t, n in pv["routines"].items()))
+
+                    # The quiet failure: the import is valid, fits the
+                    # calendar, and simply makes Sonny's days too long. Usually
+                    # it means the weekdays picked aren't the ones this program
+                    # actually runs on.
+                    if pv["over_cap_days"]:
+                        st.warning(
+                            f"⚠️ **{pv['over_cap_days']} day(s) would go over "
+                            f"{school_year.MAX_TASKS_PER_DAY} assignments** "
+                            f"(busiest: {pv['busiest']}), starting "
+                            f"{pv['over_cap_first']:%b %d, %Y}. That usually "
+                            f"means these aren't the days this program runs on "
+                            f"— try fewer weekdays."
+                        )
+                    else:
+                        st.caption(f"✅ Busiest day after this import: "
+                                   f"{pv['busiest']} assignments.")
+
+                    st.dataframe(
+                        [{"#": i + 1, "Title": r["title"],
+                          "Type": r.get("task_type", "") or "lesson",
+                          "XP": r.get("xp_reward", "") or 10,
+                          "Medium": (r.get("medium") or "offline").title()}
+                         for i, r in enumerate(picked_lessons[:200])],
+                        use_container_width=True, hide_index=True, height=260
+                    )
+                    if len(picked_lessons) > 200:
+                        st.caption(f"Showing the first 200 of {len(picked_lessons)}.")
+
+                    st.markdown("##### 4. Commit")
+                    if st.button("📥 Import into the schedule",
+                                 type="primary", use_container_width=True):
+                        try:
+                            res = curriculum_io.commit(
+                                picked_lessons, picked_routines,
+                                weekday_nums, start, replace_program=replace)
+                        except Exception as exc:
+                            st.error(f"Nothing was imported. {exc}")
+                        else:
+                            st.success(
+                                f"🎉 Imported **{res['inserted']} new** and "
+                                f"updated **{res['updated']}** assignment(s)"
+                                + (f", clearing {res['removed']} superseded."
+                                   if res["removed"] else ".")
+                                + (f"  Scheduled {res['first']:%b %d, %Y} → "
+                                   f"{res['last']:%b %d, %Y}." if res["first"] else "")
+                            )
+                            # Never let a cap thin the plan silently -- a
+                            # schedule that quietly dropped work would read as
+                            # "imported everything" when it didn't.
+                            if res.get("skipped_full"):
+                                st.info(
+                                    f"ℹ️ {res['skipped_full']} routine "
+                                    f"session(s) were left off days that were "
+                                    f"already at {school_year.MAX_TASKS_PER_DAY} "
+                                    f"assignments — build days and book "
+                                    f"parties, mostly. Lessons are never "
+                                    f"skipped this way."
+                                )
+                            st.rerun()
+
+    st.divider()
+    st.markdown("##### Export the current plan")
+    st.caption("Writes every scheduled assignment back out in this same "
+               "format — edit it in Excel and re-import, or hand it to V2.")
+    if st.button("📤 Export to spreadsheet", use_container_width=True):
+        out = curriculum_io.export_workbook("Flokus_Curriculum_2026-27_EXPORT.xlsx")
+        st.success(f"Exported {out['rows']} assignments "
+                   f"({out['lessons']} lessons + {out['routines']} routines) "
+                   f"to `{out['path']}`")
+        with open(out["path"], "rb") as fh:
+            st.download_button("⬇️ Download the workbook", fh.read(),
+                               file_name="Flokus_Curriculum_2026-27.xlsx",
+                               mime="application/vnd.openxmlformats-officedocument."
+                                    "spreadsheetml.sheet",
+                               use_container_width=True)
+
+    st.divider()
+    st.markdown("##### What's loaded right now")
+    for cat, n, done, first, last in database.count_tasks_by_category():
+        emoji = config.SUBJECT_EMOJIS.get(cat, "📋")
+        st.markdown(f"{emoji} **{cat}** — {n} assignments "
+                    f"({done or 0} completed) · {first} → {last}")
+
+
+# ==========================================================================
+# TAB 2 -- QUICK ADD
+# ==========================================================================
+with tab_quick:
+    st.subheader("⚡ Add a single lesson")
+    st.write("For a one-off: a make-up assignment, a field trip, something "
+             "Sonny asked for. Whole programs go through the importer.")
+
+    with st.form("quick_task_form", clear_on_submit=True):
+        col1, col2 = st.columns([0.6, 0.4])
+        with col1:
+            q_title = st.text_input(
+                "Lesson description*",
+                placeholder="e.g. Chapter 2, pages 15–20")
+        with col2:
+            q_cat = st.selectbox("Subject*", list(config.SUBJECT_EMOJIS.keys()))
+
+        col3, col4, col5, col6 = st.columns([0.3, 0.24, 0.26, 0.2])
+        with col3:
+            q_date = st.date_input("Scheduled date", value=date.today())
+        with col4:
+            q_medium = st.selectbox("Medium*", ["Offline", "Online"],
+                                    help="Offline (books, kits, paper) vs "
+                                         "online (apps, screen)")
+        with col5:
+            q_url = st.text_input("Link (optional)",
+                                  placeholder="https://youtube.com/…")
+        with col6:
+            q_xp = st.number_input("XP", min_value=5, max_value=500,
+                                   value=10, step=5)
+
+        if st.form_submit_button("🚀 Add to the schedule",
+                                 use_container_width=True):
+            if not q_title.strip():
+                st.error("⚠️ The lesson needs a description.")
+            else:
+                # A day off is not an error -- a make-up session over spring
+                # break is a legitimate thing to schedule. But it should be a
+                # decision, not a surprise, so say so and let it through.
+                reason = school_year.day_off_reason(q_date)
+                database.add_task_to_db(
+                    q_title.strip(), q_cat, q_url.strip() if q_url else "",
+                    q_xp, q_date, 0, q_medium)
+                msg = (f"🎉 Added **{q_title}** for {q_cat} on "
+                       f"{q_date:%A, %b %d}.")
+                if reason:
+                    st.warning(f"{msg}  Heads up — that day is **{reason}**.")
+                else:
+                    st.success(msg)
                 st.rerun()
 
-    st.divider()
-    st.subheader("📋 Upcoming Pending Tasks")
-    pending_list = database.get_all_pending_tasks()
-    if not pending_list:
-        st.info("No pending tasks scheduled.")
-    else:
-        # Display top 15 pending tasks cleanly
-        for t in pending_list[:15]:
-            t_id, t_title, t_category, t_video, t_xp, t_boss, t_date_str = t[0:7]
-            t_medium = t[7] if len(t) > 7 else "Offline"
-            t_date = datetime.strptime(t_date_str, "%Y-%m-%d").date()
-            
-            col_t1, col_t2, col_t3 = st.columns([0.6, 0.2, 0.2])
-            with col_t1:
-                emoji = config.SUBJECT_EMOJIS.get(t_category, "📋")
-                boss_label = " 👑 *(Boss Fight!)*" if t_boss == 1 else ""
-                medium_badge = "📖 Offline" if t_medium == "Offline" else "💻 Online"
-                st.markdown(f"**{emoji} {t_category}**: {t_title} (`{medium_badge}`) (💎 {t_xp} XP){boss_label}  \n*Scheduled: {t_date.strftime('%A, %b %d, %Y')}*")
-            
-            with col_t2:
-                with st.popover("✏️ Edit"):
-                    edit_title = st.text_input("Task Description", value=t_title, key=f"edit_task_title_{t_id}")
-                    edit_category = st.selectbox(
-                        "Curriculum Spine",
-                        options=list(config.SUBJECT_EMOJIS.keys()),
-                        index=list(config.SUBJECT_EMOJIS.keys()).index(t_category) if t_category in config.SUBJECT_EMOJIS else 0,
-                        key=f"edit_task_cat_{t_id}"
-                    )
-                    edit_medium = st.selectbox("Medium", ["Offline", "Online"], index=0 if t_medium == "Offline" else 1, key=f"edit_task_med_{t_id}")
-                    edit_video = st.text_input("YouTube Video URL", value=t_video or "", key=f"edit_task_vid_{t_id}")
-                    edit_xp = st.number_input("XP Reward", min_value=5, max_value=500, value=int(t_xp), step=5, key=f"edit_task_xp_{t_id}")
-                    edit_date = st.date_input("Scheduled Date", value=t_date, key=f"edit_task_date_{t_id}")
-                    edit_boss = st.checkbox("Mark as Daily Boss Fight", value=(t_boss == 1), key=f"edit_task_boss_{t_id}")
-                    
-                    if st.button("Save Changes", key=f"save_task_btn_{t_id}"):
-                        if not edit_title.strip():
-                            st.error("Task Description cannot be empty!")
-                        else:
-                            database.update_task_details(t_id, edit_title.strip(), edit_category, edit_video.strip(), edit_xp, edit_date, 1 if edit_boss else 0, edit_medium)
-                            st.success("Task updated successfully!")
-                            st.rerun()
-            
-            with col_t3:
-                with st.popover("❌ Delete"):
-                    st.write("Are you sure you want to delete this task?")
-                    if st.button("Confirm Delete", key=f"del_task_btn_{t_id}"):
-                        database.delete_task(t_id)
-                        st.success("Task deleted!")
-                        st.rerun()
 
+# ==========================================================================
+# TAB 3 -- SCHEDULE
+# ==========================================================================
+with tab_schedule:
+    st.subheader("🗓️ Weekly schedule")
+    st.write("Edit, move or delete anything already scheduled.")
 
-# ==========================================
-# TAB 2: WEEKLY VISUAL SCHEDULE & SCREEN-TIME AUDIT
-# ==========================================
-with tab_weekly:
-    st.subheader("📅 Weekly Schedule Grid & Screen-Time Audit")
-    st.write("View and balance Sonny's weekly workload and audit Offline vs. Online screen time.")
-    
-    col_w_sel, _ = st.columns([0.4, 0.6])
-    with col_w_sel:
-        selected_week_start = st.date_input("Select Week Start Date (Monday)", value=date.today() - timedelta(days=date.today().weekday()))
-        # Align to Monday
-        monday_start = selected_week_start - timedelta(days=selected_week_start.weekday())
-        
-    st.caption(f"Showing Week of **{monday_start.strftime('%B %d, %Y')}**")
-    
-    # Audit screen time for the selected 5-day week
-    week_all_pending = []
-    for d_off in range(5):
-        d_check = monday_start + timedelta(days=d_off)
-        week_all_pending.extend(database.get_pending_tasks(d_check))
-        week_all_pending.extend(database.get_completed_tasks(d_check))
-        
-    offline_count = sum(1 for t in week_all_pending if (len(t) > 6 and t[6] == "Offline") or (len(t) > 7 and t[7] == "Offline"))
-    online_count = sum(1 for t in week_all_pending if (len(t) > 6 and t[6] == "Online") or (len(t) > 7 and t[7] == "Online"))
-    total_week_tasks = len(week_all_pending)
-    
-    offline_pct = int((offline_count / total_week_tasks) * 100) if total_week_tasks > 0 else 50
-    online_pct = 100 - offline_pct if total_week_tasks > 0 else 50
-    
-    col_aud1, col_aud2, col_aud3 = st.columns(3)
-    with col_aud1:
-        st.metric("Total Weekly Lessons", f"{total_week_tasks} Lessons")
-    with col_aud2:
-        st.metric("📖 Offline Medium", f"{offline_count} Tasks ({offline_pct}%)")
-    with col_aud3:
-        st.metric("💻 Online Medium", f"{online_count} Tasks ({online_pct}%)")
-        
-    if total_week_tasks > 0:
-        st.progress(offline_pct / 100.0, text=f"Screen-Time Audit: {offline_pct}% Offline Books/Kits | {online_pct}% Online Apps")
-        if online_pct > 60:
-            st.warning("⚠️ High Screen-Time Warning: Over 60% of scheduled tasks this week are Online. Consider shifting some touchpoints to Offline hands-on work!")
-        else:
-            st.success("✅ Excellent Pacing Balance! Healthy mix of hands-on offline study and digital tools.")
+    col_sel, col_nav = st.columns([0.45, 0.55])
+    with col_sel:
+        picked_day = st.date_input(
+            "Week of", value=date.today() - timedelta(days=date.today().weekday()))
+    monday = picked_day - timedelta(days=picked_day.weekday())
+
+    week_days = [monday + timedelta(days=i) for i in range(5)]
+    week_rows = {d: database.get_tasks_on_date(d) for d in week_days}
+    total = sum(len(v) for v in week_rows.values())
+
+    with col_nav:
+        st.caption(f"Week of **{monday:%B %d, %Y}** · {total} assignments")
+
+    # Screen-time balance, which is the reason the medium column exists.
+    online = sum(1 for rows in week_rows.values() for r in rows if r[5] == "Online")
+    if total:
+        offline_pct = int(((total - online) / total) * 100)
+        st.progress(offline_pct / 100.0,
+                    text=f"{offline_pct}% offline books & kits · "
+                         f"{100 - offline_pct}% online apps")
+        if offline_pct < 40:
+            st.warning("Over 60% of this week is screen-based. Consider "
+                       "shifting a touchpoint offline.")
+
     st.divider()
 
-    week_cols = st.columns(5)
-    weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
-    
-    for idx in range(5):
-        col_date = monday_start + timedelta(days=idx)
-        is_today = (col_date == date.today())
-        
-        with week_cols[idx]:
-            header_text = f"**{weekdays[idx]}**  \n*{col_date.strftime('%b %d')}*"
-            if is_today:
-                st.markdown(f"📌 {header_text}")
+    cols = st.columns(5)
+    for i, day in enumerate(week_days):
+        with cols[i]:
+            off = school_year.day_off_reason(day)
+            label = f"**{day:%A}**  \n*{day:%b %d}*"
+            if day == date.today():
+                st.markdown(f"📌 {label}")
             else:
-                st.markdown(header_text)
-                
+                st.markdown(label)
+            if day.weekday() == school_year.REVIEW_DAY:
+                st.caption("Review & catch-up")
             st.divider()
-            
-            p_tasks = database.get_pending_tasks(col_date)
-            c_tasks = database.get_completed_tasks(col_date)
-            
-            # Render pending tasks
-            for pt in p_tasks:
-                t_id, t_title, t_category, t_video, t_xp, t_boss = pt[0:6]
-                t_med = pt[6] if len(pt) > 6 else "Offline"
-                emoji = config.SUBJECT_EMOJIS.get(t_category, "📋")
-                med_icon = "📖" if t_med == "Offline" else "💻"
-                
+
+            if off:
+                st.info(f"🌴 {off}")
+                continue
+
+            rows = week_rows[day]
+            if not rows:
+                st.caption("Nothing scheduled.")
+
+            for t_id, t_title, t_cat, t_url, t_xp, t_med, t_done, t_date in rows:
+                emoji = config.SUBJECT_EMOJIS.get(t_cat, "📋")
+                if t_done:
+                    st.markdown(f"✅ ~~{emoji} {t_title}~~")
+                    continue
+
                 with st.container(border=True):
                     st.markdown(f"**{emoji} {t_title}**")
-                    st.caption(f"{t_category} | {med_icon} {t_med} | 💎 {t_xp} XP")
-                    
-                    col_b1, col_b2 = st.columns(2)
-                    with col_b1:
-                        with st.popover("✏️"):
-                            e_title = st.text_input("Title", value=t_title, key=f"grid_edit_title_{t_id}")
-                            e_cat = st.selectbox("Category", list(config.SUBJECT_EMOJIS.keys()), index=list(config.SUBJECT_EMOJIS.keys()).index(t_category) if t_category in config.SUBJECT_EMOJIS else 0, key=f"grid_edit_cat_{t_id}")
-                            e_med = st.selectbox("Medium", ["Offline", "Online"], index=0 if t_med == "Offline" else 1, key=f"grid_edit_med_{t_id}")
-                            if st.button("Save", key=f"grid_save_btn_{t_id}"):
-                                database.update_task_details(t_id, e_title, e_cat, t_video, t_xp, col_date, t_boss, e_med)
+                    st.caption(f"{t_cat} · {'💻' if t_med == 'Online' else '📖'} "
+                               f"{t_med} · 💎 {t_xp} XP")
+
+                    # Widget keys carry the task id AND the column date. The id
+                    # alone used to be enough only by luck: the grid read from
+                    # get_pending_tasks(), which sweeps overdue work into
+                    # today's column, so an assignment running late rendered in
+                    # both its own column and today's -- and Streamlit raised
+                    # StreamlitDuplicateElementKey right in the teacher's face.
+                    # The grid now queries an exact date, and the keys are
+                    # namespaced so a future change cannot reintroduce it.
+                    k = f"{t_id}_{day.isoformat()}"
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        with st.popover("✏️", use_container_width=True):
+                            e_title = st.text_input("Title", value=t_title,
+                                                    key=f"g_title_{k}")
+                            cats = list(config.SUBJECT_EMOJIS.keys())
+                            e_cat = st.selectbox(
+                                "Subject", cats,
+                                index=cats.index(t_cat) if t_cat in cats else 0,
+                                key=f"g_cat_{k}")
+                            e_med = st.selectbox(
+                                "Medium", ["Offline", "Online"],
+                                index=0 if t_med != "Online" else 1,
+                                key=f"g_med_{k}")
+                            e_xp = st.number_input(
+                                "XP", min_value=5, max_value=500,
+                                value=int(t_xp), step=5, key=f"g_xp_{k}")
+                            e_date = st.date_input("Move to", value=day,
+                                                   key=f"g_date_{k}")
+                            if st.button("Save", key=f"g_save_{k}"):
+                                if not e_title.strip():
+                                    st.error("Title cannot be empty.")
+                                else:
+                                    database.update_task_details(
+                                        t_id, e_title.strip(), e_cat, t_url or "",
+                                        e_xp, e_date, 0, e_med)
+                                    st.rerun()
+                    with c2:
+                        with st.popover("🗑️", use_container_width=True):
+                            st.write("Delete this assignment?")
+                            if st.button("Confirm", key=f"g_del_{k}"):
+                                database.delete_task(t_id)
                                 st.rerun()
-                    with col_b2:
-                        if st.button("🗑️", key=f"grid_del_btn_{t_id}"):
-                            database.delete_task(t_id)
-                            st.rerun()
-                            
-            # Render completed tasks
-            for ct in c_tasks:
-                t_id, t_title, t_category, t_video, t_xp, t_boss, _sum = ct[0:7]
-                t_med = ct[7] if len(ct) > 7 else "Offline"
-                emoji = config.SUBJECT_EMOJIS.get(t_category, "📋")
-                med_icon = "📖" if t_med == "Offline" else "💻"
-                st.markdown(f"✅ ~{emoji} {t_title}~ ({med_icon})")
-                
-            if len(p_tasks) == 0 and len(c_tasks) == 0:
-                st.caption("No lessons scheduled.")
-                
-            st.write("")
-            # Inline quick-add button for this specific day
-            with st.popover(f"➕ Add to {weekdays[idx]}", use_container_width=True):
-                st.markdown(f"**Add Lesson for {weekdays[idx]}, {col_date.strftime('%b %d')}**")
-                pop_title = st.text_input("Lesson Title", key=f"pop_title_{idx}")
-                pop_cat = st.selectbox("Category", list(config.SUBJECT_EMOJIS.keys()), key=f"pop_cat_{idx}")
-                pop_med = st.selectbox("Medium", ["Offline", "Online"], key=f"pop_med_{idx}")
-                pop_xp = st.number_input("XP", min_value=5, max_value=200, value=10, step=5, key=f"pop_xp_{idx}")
-                if st.button("Add to Schedule", key=f"pop_submit_{idx}"):
-                    if pop_title.strip():
-                        database.add_task_to_db(pop_title.strip(), pop_cat, "", pop_xp, col_date, 0, pop_med)
-                        st.success(f"Added to {weekdays[idx]}!")
-                        st.rerun()
-
-
-# ==========================================
-# TAB 3: MASTER CURRICULUM SCHEDULER (TIER 1 & TIER 2)
-# ==========================================
-with tab_advanced:
-    st.subheader("🎓 Flokus Academy Master Curriculum Scheduler (Tier 1 & Tier 2)")
-    st.write("View the 36-week master plan and automatically batch-schedule Sonny's complete homeschooling curriculum.")
-    
-    # 1. Tier 1 Yearly Overview Expander
-    with st.expander("🗺️ Tier 1: Yearly Overview (36 Weeks / 4 Quarters)", expanded=True):
-        st.markdown("Annual map balancing Core Foundational Hubs (Math, ELA, History, Logic) with Applied Project Spokes (Engineering, AI, Interactive STEM, Chess, Outschool).")
-        
-        q_cols = st.columns(4)
-        for q_idx in range(1, 5):
-            q_info = curriculum_data.TIER_1_OVERVIEW[q_idx]
-            with q_cols[q_idx - 1]:
-                st.markdown(f"### {q_info['title']}")
-                st.caption(f"**Scope:** {q_info['weeks']}")
-                st.markdown(f"**🧮 Math & Logic:**  \n{q_info['math_logic']}")
-                st.markdown(f"**✍️ ELA & Lit:**  \n{q_info['ela']}")
-                st.markdown(f"**🗺️ History & Civics:**  \n{q_info['history']}")
-                st.markdown(f"**🧠 Critical & Strategy:**  \n{q_info['critical_thinking']}")
-                st.markdown(f"**🧪 Applied STEM:**  \n{q_info['stem_electives']}")
-                
-    # 2. Tier 2 Detailed Unit Increments Expander
-    with st.expander("📦 Tier 2: Structured Unit Increments (36-Week Detailed Breakdown)", expanded=False):
-        st.markdown("9 4-week unit blocks demonstrating the synchronization of Core Hub subjects with Supplemental Spoke programs.")
-        
-        df_tier2 = pd.DataFrame(curriculum_data.TIER_2_UNITS)
-        df_tier2.columns = ["Wk", "Unit Theme", "Math & STEM (Beast & Brilliant)", "Language Arts (Brave Writer)", "History & Logic (Tuttle & Critical)", "Strategy & Engineering (Synthesis, Chess, CrunchLabs, Outschool)"]
-        
-        unit_filter = st.selectbox("Filter by Unit Block", ["All 36 Weeks"] + [f"Unit {u}" for u in range(1, 10)])
-        if unit_filter != "All 36 Weeks":
-            selected_u_num = int(unit_filter.split()[1])
-            df_filtered = df_tier2[(df_tier2["Wk"] >= (selected_u_num - 1)*4 + 1) & (df_tier2["Wk"] <= selected_u_num * 4)]
-        else:
-            df_filtered = df_tier2
-            
-        st.dataframe(df_filtered, use_container_width=True, hide_index=True)
-
-    st.divider()
-    
-    # 3. Batch Schedule Generator Form
-    st.subheader("🚀 1-Click Master Curriculum Batch Scheduler")
-    st.write("Select a scope (Full Year, Quarter, Unit, or Week) to generate and load scheduled assignments directly into Sonny's calendar.")
-    
-    with st.form("master_curriculum_batch_form"):
-        col_gen1, col_gen2, col_gen3 = st.columns([0.35, 0.35, 0.3])
-        
-        with col_gen1:
-            schedule_scope = st.selectbox(
-                "Select Curriculum Scope*",
-                [
-                    "Full School Year (All 36 Weeks)",
-                    "Quarter 1 (Weeks 1–9) - Foundations & Origins",
-                    "Quarter 2 (Weeks 10–18) - Revolution & Reasoning",
-                    "Quarter 3 (Weeks 19–27) - Nation Building & Logic",
-                    "Quarter 4 (Weeks 28–36) - Expansion & Synthesis",
-                    "Unit 1 (Weeks 1–4) - Trade & Place Value",
-                    "Unit 2 (Weeks 5–8) - Empire & Addition",
-                    "Unit 3 (Weeks 9–12) - Revolution & Robots",
-                    "Unit 4 (Weeks 13–16) - Wilderlore & Guilds",
-                    "Unit 5 (Weeks 17–20) - Odder & Ocean Verse",
-                    "Unit 6 (Weeks 21–24) - Lemoncello Puzzles",
-                    "Unit 7 (Weeks 25–28) - Camels & Flashbacks",
-                    "Unit 8 (Weeks 29–32) - Thirst & Resource Logic",
-                    "Unit 9 (Weeks 33–36) - Sidekicks & Capstones",
-                    "Specific Week"
-                ]
-            )
-            
-        with col_gen2:
-            if schedule_scope == "Specific Week":
-                single_week_num = st.number_input("Select Week Number (1–36)", min_value=1, max_value=36, value=1)
-            else:
-                single_week_num = None
-                st.info("Batching multi-week curriculum range")
-                
-        with col_gen3:
-            start_monday_date = st.date_input("Start Date (Monday)*", value=date.today() - timedelta(days=date.today().weekday()))
-
-        submitted_master_batch = st.form_submit_button("🚀 Generate & Load Master Curriculum Schedule", use_container_width=True)
-        
-        if submitted_master_batch:
-            mon_start = start_monday_date - timedelta(days=start_monday_date.weekday())
-            
-            # Determine list of week numbers
-            if schedule_scope == "Full School Year (All 36 Weeks)":
-                target_weeks = list(range(1, 37))
-            elif "Quarter 1" in schedule_scope:
-                target_weeks = list(range(1, 10))
-            elif "Quarter 2" in schedule_scope:
-                target_weeks = list(range(10, 19))
-            elif "Quarter 3" in schedule_scope:
-                target_weeks = list(range(19, 28))
-            elif "Quarter 4" in schedule_scope:
-                target_weeks = list(range(28, 37))
-            elif "Unit 1" in schedule_scope:
-                target_weeks = list(range(1, 5))
-            elif "Unit 2" in schedule_scope:
-                target_weeks = list(range(5, 9))
-            elif "Unit 3" in schedule_scope:
-                target_weeks = list(range(9, 13))
-            elif "Unit 4" in schedule_scope:
-                target_weeks = list(range(13, 17))
-            elif "Unit 5" in schedule_scope:
-                target_weeks = list(range(17, 21))
-            elif "Unit 6" in schedule_scope:
-                target_weeks = list(range(21, 25))
-            elif "Unit 7" in schedule_scope:
-                target_weeks = list(range(25, 29))
-            elif "Unit 8" in schedule_scope:
-                target_weeks = list(range(29, 33))
-            elif "Unit 9" in schedule_scope:
-                target_weeks = list(range(33, 37))
-            elif schedule_scope == "Specific Week" and single_week_num:
-                target_weeks = [int(single_week_num)]
-            else:
-                target_weeks = [1]
-                
-            created_count = curriculum_data.generate_tier_schedule(target_weeks, mon_start)
-            st.success(f"🎉 Successfully loaded **{len(target_weeks)} Weeks** of Flokus Academy Master Curriculum starting {mon_start.strftime('%b %d, %Y')}! Created **{created_count} lessons** across all 9 curriculum spokes!")
-            st.rerun()

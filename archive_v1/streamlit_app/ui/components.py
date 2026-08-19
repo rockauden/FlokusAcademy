@@ -6,7 +6,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import html
-import time
 from datetime import date, datetime
 
 import database
@@ -82,72 +81,6 @@ def render_event_card(ev_title, ev_date_obj, ev_time, ev_cat, ev_imp, ev_desc):
         {desc_html}
     </div>
     """, unsafe_allow_html=True)
-
-
-def render_focus_timer(task_id):
-    """Renders the focus sprint timer widget for a given task."""
-    t_col1, t_col2 = st.columns([0.5, 0.5])
-    with t_col1:
-        focus_mins = st.number_input(
-            "Sprint Minutes", min_value=1, max_value=60, value=15,
-            step=1, key=f"timer_input_{task_id}"
-        )
-    with t_col2:
-        st.write("")
-        start_timer = st.button("🚀 Start Sprint", key=f"timer_btn_{task_id}")
-
-    # Cache target focus time when start button is pressed
-    if start_timer:
-        st.session_state[f"runtime_captured_{task_id}"] = int(focus_mins)
-        st.session_state[f"timer_started_{task_id}"] = time.time()
-        st.session_state[f"timer_duration_{task_id}"] = int(focus_mins) * 60
-        st.rerun()
-
-    # Check and render countdown widget
-    if f"timer_started_{task_id}" in st.session_state:
-        start_time = st.session_state[f"timer_started_{task_id}"]
-        duration = st.session_state[f"timer_duration_{task_id}"]
-        elapsed = time.time() - start_time
-        remaining = max(0, int(duration - elapsed))
-
-        if remaining > 0:
-            timer_html = f"""
-            <div style="background-color: #1a2238; border: 1px solid #63b3ed; border-radius: 8px; padding: 15px; text-align: center; font-family: 'Outfit', sans-serif;">
-                <div style="font-size: 13px; text-transform: uppercase; letter-spacing: 0.5px; color: #8c9bb4; margin-bottom: 5px;">⌛ Active Focus Window</div>
-                <div id="countdown-val-{task_id}" style="font-size: 32px; font-weight: bold; color: #63b3ed;">00:00</div>
-            </div>
-            <script>
-                let seconds = {remaining};
-                function getColor(secs) {{
-                    if (secs > 300) return '#63b3ed';
-                    if (secs > 60)  return '#f6ad55';
-                    return '#f56565';
-                }}
-                function updateTimer() {{
-                    let el = document.getElementById('countdown-val-{task_id}');
-                    if (!el) return;
-                    
-                    let mins = Math.floor(seconds / 60);
-                    let secs = seconds % 60;
-                    el.innerText = `${{mins.toString().padStart(2, '0')}}:${{secs.toString().padStart(2, '0')}}`;
-                    el.style.color = getColor(seconds);
-                    
-                    if (seconds <= 0) {{
-                        el.innerText = "🎉 Focus Sprint Complete! You crushed it!";
-                        el.style.color = "#22c55e";
-                    }} else {{
-                        seconds--;
-                        setTimeout(updateTimer, 1000);
-                    }}
-                }}
-                updateTimer();
-            </script>
-            """
-            components.html(timer_html, height=100)
-            if st.button("🔄 Sync/Refresh Timer", key=f"timer_refresh_{task_id}"):
-                st.rerun()
-        else:
-            st.success("🎉 Focus Sprint Complete! You crushed it!")
 
 
 def render_calendar_grid(view_year, view_month, events_in_month):
@@ -296,36 +229,14 @@ def render_countdown_hero(next_event):
     </div>
     """, unsafe_allow_html=True)
 
-def trigger_completion_effect(is_boss: bool, streak: int):
-    """Fires tiered visual feedback based on achievement tier."""
-    if is_boss:
-        st.snow()
-        st.markdown("""
-        <div style="
-            background: linear-gradient(135deg, #2d164d, #170b29);
-            border: 2px solid #9f7aea;
-            border-radius: 14px;
-            padding: 20px;
-            text-align: center;
-            animation: pulse 0.6s ease-in-out;
-            box-shadow: 0 0 30px rgba(159, 122, 234, 0.5);
-        ">
-            <div style="font-size: 36px;">👑</div>
-            <div style="font-size: 22px; font-weight: 800; color: #d6bcfa;">
-                BOSS DEFEATED!
-            </div>
-            <div style="font-size: 15px; color: #b794f4; margin-top: 6px;">
-                Double XP Awarded! You're unstoppable.
-            </div>
-        </div>
-        <style>
-            @keyframes pulse {{
-                0% {{ transform: scale(0.9); opacity: 0; }}
-                100% {{ transform: scale(1); opacity: 1; }}
-            }}
-        </style>
-        """, unsafe_allow_html=True)
-    elif streak > 0 and streak % 5 == 0:
+def trigger_completion_effect(streak: int):
+    """Fires visual feedback when an assignment is completed.
+
+    The boss-fight tier was removed along with double XP. Every assignment now
+    pays what it says on the card, so there is no second, louder celebration
+    for the ones that happened to be flagged.
+    """
+    if streak > 0 and streak % 5 == 0:
         st.balloons()
         st.success(f"🔥 **{streak}-Day Streak!** You're on fire, Sonny!")
     else:

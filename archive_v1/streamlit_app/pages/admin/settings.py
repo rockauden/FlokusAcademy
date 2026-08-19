@@ -49,19 +49,9 @@ if selected_p != current_p:
     st.rerun()
 # --- END NEW ---
 
-st.divider()
-st.markdown("### 📝 Mission Settings")
-st.caption("Configure requirements for student mission completion.")
-current_min_length = database.get_note_min_length()
-new_min_length = st.number_input(
-    "Minimum Characters for Mission Notes", 
-    min_value=0, max_value=500, value=current_min_length, step=5,
-    help="The minimum number of characters required when Sonny writes what he learned to mark a mission complete."
-)
-if new_min_length != current_min_length:
-    database.set_note_min_length(new_min_length)
-    st.success(f"Minimum note length updated to {new_min_length} characters.")
-    st.rerun()
+# The minimum-note-length setting was removed 2026-08-18. It gated completion
+# on a character count, which taught Sonny to pad rather than to reflect. The
+# note box is still there and still saved -- it is just no longer a toll gate.
 
 # --- NEW: One-Click Database Backups & Reset ---
 st.divider()

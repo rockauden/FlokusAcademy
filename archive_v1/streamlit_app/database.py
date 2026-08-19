@@ -460,21 +460,31 @@ def add_task_to_db(title, category, video_url, xp_reward, target_date, is_boss, 
         conn.close()
 
 def get_pending_tasks(view_date):
+    """Assignments still outstanding for `view_date`.
+
+    Today's tab deliberately sweeps up everything still unfinished from earlier
+    days (`task_date <= today`) so nothing quietly disappears. A consequence
+    worth knowing about: an overdue assignment is returned by BOTH its own
+    day's tab and today's tab, so anything keying Streamlit widgets off the
+    task id alone will collide. Callers must namespace widget keys by the tab
+    they are drawing. `task_date` is returned last so a caller can tell a
+    carried-over item from one that belongs to the day being viewed.
+    """
     date_string = view_date.strftime("%Y-%m-%d")
     conn = sqlite3.connect('flokus.db')
     try:
         cursor = conn.cursor()
         if view_date == date.today():
             cursor.execute("""
-                SELECT id, title, category, video_url, xp_reward, is_boss_fight, medium 
-                FROM tasks 
+                SELECT id, title, category, video_url, xp_reward, is_boss_fight, medium, task_date
+                FROM tasks
                 WHERE is_completed = 0 AND task_date <= ?
                 ORDER BY task_date ASC
             """, (date_string,))
         else:
             cursor.execute("""
-                SELECT id, title, category, video_url, xp_reward, is_boss_fight, medium 
-                FROM tasks 
+                SELECT id, title, category, video_url, xp_reward, is_boss_fight, medium, task_date
+                FROM tasks
                 WHERE is_completed = 0 AND task_date = ?
             """, (date_string,))
         tasks = cursor.fetchall()
@@ -482,17 +492,64 @@ def get_pending_tasks(view_date):
         conn.close()
     return tasks
 
-def complete_task(task_id, summary="", minutes=0):
+def get_tasks_on_date(view_date):
+    """Everything scheduled for exactly this date, done or not.
+
+    Deliberately different from get_pending_tasks(): that one sweeps overdue
+    work forward into today's tab, which is right for the student and wrong for
+    the teacher. The admin schedule grid needs to show the PLAN -- what sits on
+    Wednesday -- not Wednesday plus everything running late. Mixing the two is
+    what made the same assignment render in two columns of one grid and crash
+    Streamlit on duplicate widget keys.
+    """
+    conn = sqlite3.connect('flokus.db')
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, title, category, video_url, xp_reward, medium,
+                   is_completed, task_date
+            FROM tasks
+            WHERE task_date = ?
+            ORDER BY is_completed ASC, category ASC, id ASC
+        """, (view_date.strftime("%Y-%m-%d"),))
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def count_tasks_by_category():
+    conn = sqlite3.connect('flokus.db')
+    try:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT category, COUNT(*), SUM(is_completed), MIN(task_date), MAX(task_date)
+            FROM tasks GROUP BY category ORDER BY COUNT(*) DESC
+        """)
+        return cursor.fetchall()
+    finally:
+        conn.close()
+
+
+def complete_task(task_id, summary=""):
+    """Mark an assignment done.
+
+    `minutes` used to be passed here by the focus-sprint timer. The timer was
+    removed (2026-08-18): it recorded how long a countdown had been left
+    running, not how long Sonny actually worked, so the number it stored was
+    never worth the stopwatch it put between him and the assignment.
+    focus_minutes stays in the schema so historical rows keep their meaning,
+    but nothing writes to it any more.
+    """
     today_str = date.today().strftime("%Y-%m-%d")
     conn = sqlite3.connect('flokus.db')
     try:
         cursor = conn.cursor()
 
         cursor.execute("""
-            UPDATE tasks 
-            SET is_completed = 1, task_summary = ?, focus_minutes = ?, actual_completion_date = ? 
+            UPDATE tasks
+            SET is_completed = 1, task_summary = ?, actual_completion_date = ?
             WHERE id = ?
-        """, (summary, minutes, today_str, task_id))
+        """, (summary, today_str, task_id))
 
         # NOTE: Pet XP & stat mutation removed (2026-08-12 decoupling).
         # XP value is still stored in tasks.xp_reward and tracked via get_xp_balance().
@@ -763,40 +820,21 @@ def set_floki_persona(persona):
     finally:
         conn.close()
 
-def get_note_min_length():
-    conn = sqlite3.connect('flokus.db')
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT value FROM app_config WHERE key = 'note_min_length'")
-        row = cursor.fetchone()
-        val = int(row[0]) if row else 15
-    finally:
-        conn.close()
-    return val
-
-def set_note_min_length(length):
-    conn = sqlite3.connect('flokus.db')
-    try:
-        cursor = conn.cursor()
-        cursor.execute("INSERT OR REPLACE INTO app_config (key, value) VALUES ('note_min_length', ?)", (str(length),))
-        conn.commit()
-    finally:
-        conn.close()
-
-# ==========================================
-# METRICS & ANALYTICS DATA GENERATORS
-# ==========================================
+# Removed 2026-08-18 with the focus timer and the note-length gate:
+#   get_total_focus_minutes()  -- summed a countdown, not work done
+#   get_note_min_length() / set_note_min_length()  -- gated completion on
+#     a character count, which taught padding rather than reflection
+# The focus_minutes column and the note_min_length config key are left in
+# place so existing rows still read back; nothing writes them.
 
 def get_xp_balance():
     conn = sqlite3.connect('flokus.db')
     try:
         cursor = conn.cursor()
         
-        cursor.execute("""
-            SELECT SUM(CASE WHEN is_boss_fight = 1 THEN xp_reward * 2 ELSE xp_reward END) 
-            FROM tasks 
-            WHERE is_completed = 1
-        """)
+        # Flat XP. Boss fights (double XP on flagged assignments) were retired
+        # 2026-08-18 -- an assignment now pays exactly what its card says.
+        cursor.execute("SELECT SUM(xp_reward) FROM tasks WHERE is_completed = 1")
         earned_tasks = cursor.fetchone()[0] or 0
         
         cursor.execute("SELECT SUM(xp_reward) FROM creator_projects WHERE status = 'Completed'")
@@ -836,10 +874,10 @@ def get_xp_over_time():
     try:
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT task_date, SUM(CASE WHEN is_boss_fight = 1 THEN xp_reward * 2 ELSE xp_reward END) 
-            FROM tasks 
-            WHERE is_completed = 1 
-            GROUP BY task_date 
+            SELECT task_date, SUM(xp_reward)
+            FROM tasks
+            WHERE is_completed = 1
+            GROUP BY task_date
             ORDER BY task_date ASC
         """)
         data = cursor.fetchall()
@@ -973,16 +1011,6 @@ def get_completed_projects_by_platform():
     finally:
         conn.close()
     return df_p
-
-def get_total_focus_minutes():
-    conn = sqlite3.connect('flokus.db')
-    try:
-        cursor = conn.cursor()
-        cursor.execute("SELECT SUM(focus_minutes) FROM tasks WHERE is_completed = 1")
-        val = cursor.fetchone()[0] or 0
-    finally:
-        conn.close()
-    return val
 
 def get_autonomy_metrics():
     conn = sqlite3.connect('flokus.db')

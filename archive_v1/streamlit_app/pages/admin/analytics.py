@@ -101,20 +101,14 @@ with col_chart1:
     df_master_analytics = pd.DataFrame(list(spine_map.items()), columns=["Subject", "Completed Milestones"])
     df_master_analytics = df_master_analytics.set_index("Subject")
     
-    total_focus_mins = database.get_total_focus_minutes()
-    
-    # --- NEW: Calculate Autonomy vs. Rollover Telemetry Metrics ---
+    # "Total Deep Work Focus Time" was dropped with the focus-sprint timer
+    # (2026-08-18). It summed the durations Sonny had punched into a countdown,
+    # so it measured button presses rather than work, and reporting it as
+    # "deep work" gave a false number a lot of authority.
     total_done_tasks, on_time_tasks = database.get_autonomy_metrics()
-    
-    # Compute operational percentage rating
     autonomy_score = int((on_time_tasks / total_done_tasks) * 100) if total_done_tasks > 0 else 100
-    
-    # Render side-by-side behavioral metrics
-    kpi_col1, kpi_col2 = st.columns(2)
-    with kpi_col1:
-        st.metric(label="⌛ Total Deep Work Focus Time", value=f"{total_focus_mins} Minutes")
-    with kpi_col2:
-        st.metric(label="🎯 On-Schedule Completion Rating", value=f"{autonomy_score}%")
+
+    st.metric(label="🎯 On-Schedule Completion Rating", value=f"{autonomy_score}%")
     st.write("")
     # --- END NEW ---
     

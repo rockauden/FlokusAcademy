@@ -1,11 +1,9 @@
 import streamlit as st
-import time
 from datetime import date, datetime, timedelta
 import database
 import config
 from ui.components import (
-    render_school_notifications_bar, 
-    render_focus_timer,
+    render_school_notifications_bar,
     render_animated_progress,
     render_student_kpi_card,
     render_completed_mission_card,
@@ -81,7 +79,7 @@ pending_today = database.get_pending_tasks(today)
 completed_today = database.get_completed_tasks(today)
 total_today = len(pending_today) + len(completed_today)
 progress_percentage = int((len(completed_today) / total_today) * 100) if total_today > 0 else 0
-daily_xp_today = sum([t[4] * 2 if t[5] == 1 else t[4] for t in completed_today])
+daily_xp_today = sum(t[4] for t in completed_today)
 current_streak = database.get_daily_streak()
 
 st.markdown(f"### Happy {day_name}, Sonny! 🚀")
@@ -132,17 +130,23 @@ def day_label(d, today_dt):
         return f"⚠️ {name} ({short})"
     return f"{name} ({short})"
 
-week_day_labels = [day_label(d, today) for d in week_dates]
+# Today first, then the rest of the week in order.
+#
+# WHY NOT PLAIN MON-FRI: st.tabs always opens on the first tab and offers no way
+# to preselect one. The old code computed a `default_tab_index` and then never
+# used it, so by Thursday Sonny opened the app to Monday -- three days of
+# finished work -- and had to hunt for the day he was actually on. The date is
+# on every tab and today's carries a 📍, so leading with it costs no clarity.
+if today in week_dates:
+    ordered = [today] + [d for d in week_dates if d != today]
+else:
+    ordered = week_dates                       # weekend: plain Mon-Fri
 
-# If weekend (Sat/Sun index 5-6), default to Monday (tab 0)
-default_tab_index = current_weekday_idx if current_weekday_idx < 5 else 0
-
+week_day_labels = [day_label(d, today) for d in ordered]
 tabs = st.tabs(week_day_labels)
 
-min_note_length = database.get_note_min_length()
-
 for i, tab in enumerate(tabs):
-    tab_date = week_dates[i]
+    tab_date = ordered[i]
     is_today_tab = (tab_date == today)
     
     with tab:
@@ -157,84 +161,77 @@ for i, tab in enumerate(tabs):
             if len(pending_list) > 0:
                 st.write("**Up Next:**")
                 for task in pending_list:
-                    task_id, task_title, task_category, task_video_url, task_xp, is_boss = task[0:6]
+                    task_id, task_title, task_category, task_video_url, task_xp = task[0:5]
                     task_medium = task[6] if len(task) > 6 else "Offline"
+                    own_date = task[7] if len(task) > 7 else None
                     emoji = config.SUBJECT_EMOJIS.get(task_category, "📋")
                     med_badge = "📖 Offline" if task_medium == "Offline" else "💻 Online"
-                    
-                    expander_title = f"{emoji} {task_category}: {task_title} [{med_badge}] (💎 {task_xp * 2 if is_boss == 1 else task_xp} XP)"
-                    if is_boss == 1:
-                        expander_title = f"👑 BOSS FIGHT: {expander_title}"
-                        
-                    # Progressive disclosure expander
-                    with st.expander(expander_title, expanded=is_today_tab):
-                        if is_boss == 1:
-                            st.markdown('<div class="boss-fight-marker"></div>', unsafe_allow_html=True)
-                            st.markdown("👑 **DAILY BOSS FIGHT - DOUBLE XP CHALLENGE!** 👑")
-                            
-                        # Mission Header
-                        col_exp1, col_exp2 = st.columns([0.7, 0.3])
-                        with col_exp1:
-                            st.write(f"**Mission:** {task_title}")
-                        with col_exp2:
-                            st.write(f"`{med_badge}`")
-                            
-                        # 4-step mission flow
-                        s1, s2, s3, s4 = st.columns(4)
-                        with s1: st.markdown("<span class='mission-step-active'>**① Learn**</span>", unsafe_allow_html=True)
-                        with s2: st.markdown("<span class='mission-step-active'>**② Sprint**</span>", unsafe_allow_html=True)  
-                        with s3: st.markdown("<span class='mission-step-active'>**③ Reflect**</span>", unsafe_allow_html=True)
-                        with s4: st.markdown("<span class='mission-step-active'>**④ Complete**</span>", unsafe_allow_html=True)
-                        st.divider()
-                        
-                        # Step 1 — Resource
+
+                    # Today's tab also lists anything still unfinished from an
+                    # earlier day, so one assignment can be drawn twice in one
+                    # render -- once here and once in its own day's tab. Keying
+                    # the widgets on task_id alone made Streamlit raise
+                    # DuplicateElementKey, which put a red traceback in front of
+                    # a nine-year-old the first morning he ran a day behind.
+                    # The tab's own date namespaces the keys.
+                    wkey = f"{task_id}_{tab_date.isoformat()}"
+                    carried = own_date and own_date != tab_date.isoformat()
+
+                    # One card, three things: where the work is, a place to say
+                    # what you learned, and the checkbox. The old card wrapped
+                    # this in a four-step Learn/Sprint/Reflect/Complete ritual
+                    # with a countdown timer and a minimum character count on
+                    # the note. That is a lot of ceremony to stand between a
+                    # nine-year-old and twenty minutes of Beast Academy.
+                    with st.expander(
+                        f"{'↩️ ' if carried else ''}{emoji} {task_category}: "
+                        f"{task_title} [{med_badge}] (💎 {task_xp} XP)",
+                        expanded=is_today_tab and not carried
+                    ):
+                        if carried:
+                            st.caption(
+                                f"Carried over from "
+                                f"{datetime.strptime(own_date, '%Y-%m-%d'):%A, %b %d}."
+                                " No rush — finish it when you get to it.")
+
                         launch_url = config.PLATFORM_LINKS.get(task_category, "")
                         parts = task_category.split("(")
                         platform_name = parts[-1].replace(")", "").strip() if len(parts) > 1 else task_category
-                        
-                        if task_video_url:
-                            st.markdown("##### 📺 Step 1: Watch the Lesson")
+
+                        # Only hand st.video() something that is actually a
+                        # video. Sixteen rows had a platform HOMEPAGE stored in
+                        # video_url (beastacademy.com/login, bravewriter.com),
+                        # and st.video() renders those as an empty black player
+                        # with a dead 0:00 scrubber -- so the card looked broken
+                        # and the real link never appeared.
+                        is_video = task_video_url and any(
+                            h in task_video_url
+                            for h in ("youtube.com", "youtu.be", "vimeo.com",
+                                      ".mp4", ".webm", ".mov")
+                        )
+                        if is_video:
                             st.video(task_video_url)
+                        elif task_video_url:
+                            st.markdown(f"##### 🚀 [Open the link →]({task_video_url})")
                         elif launch_url:
-                            st.markdown(f"##### 🚀 Step 1: [Open {platform_name} →]({launch_url})")
+                            st.markdown(f"##### 🚀 [Open {platform_name} →]({launch_url})")
                         else:
-                            st.markdown("##### 📖 Step 1: Complete your offline assignment")
-                            
-                        st.markdown("---")
-                        # Step 2 — Timer
-                        st.markdown("##### ⏱️ Step 2: Start Your Focus Sprint")
-                        render_focus_timer(task_id)
-                        
-                        st.markdown("---")
-                        # Step 3 — Reflect
-                        st.markdown("##### ✏️ Step 3: What Did You Learn?")
-                        
-                        note_input = st.text_area("Write your summary here...", 
-                                                   key=f"beta_note_input_{task_id}", height=80)
-                        note_chars = len(note_input.strip())
-                        if note_input:
-                            char_color = "#22c55e" if note_chars >= min_note_length else "#f6ad55"
-                            st.markdown(f"<span style='font-size:11px; color:{char_color};'>"
-                                        f"{note_chars}/{min_note_length} characters</span>", unsafe_allow_html=True)
-                        
-                        st.markdown("---")
-                        # Step 4 — Complete
-                        st.markdown("##### ✅ Step 4: Mark Mission Complete")
-                        is_checked = st.checkbox("I finished this mission!", key=f"beta_task_chk_{task_id}")
-                        
-                        if is_checked:
-                            if note_chars < min_note_length:
-                                st.warning(f"⚠️ Note is too short! Write at least {min_note_length} characters about what you learned. (Current: {note_chars}/{min_note_length})")
-                            else:
-                                completed_mins = st.session_state.get(f"runtime_captured_{task_id}", 0)
-                                database.complete_task(task_id, note_input, completed_mins)
-                                if f"runtime_captured_{task_id}" in st.session_state:
-                                    del st.session_state[f"runtime_captured_{task_id}"]
-                                
-                                # Set just completed flag for animation
-                                st.session_state[f"just_completed_{task_id}"] = True
-                                trigger_completion_effect(is_boss == 1, current_streak)
-                                st.rerun()
+                            st.markdown("##### 📖 Offline assignment — grab your book.")
+
+                        # The note stays because writing down what you learned
+                        # is the point. The blocking character count does not:
+                        # it turned a reflection into a toll gate, and the way
+                        # past a toll gate is to type filler.
+                        note_input = st.text_area(
+                            "What did you learn? (optional)",
+                            key=f"note_input_{wkey}", height=80
+                        )
+
+                        if st.checkbox("I finished this!", key=f"task_chk_{wkey}"):
+                            database.complete_task(task_id, note_input)
+                            st.session_state[f"just_completed_{task_id}"] = True
+                            trigger_completion_effect(current_streak)
+                            st.rerun()
             else:
                 st.success("🎉 All missions for this day are completed!")
                 
@@ -242,8 +239,8 @@ for i, tab in enumerate(tabs):
                 st.divider()
                 st.markdown("#### ✅ Completed Missions")
                 for task in completed_list:
-                    task_id, task_title, task_category, task_video_url, task_xp, is_boss, task_summary = task[0:7]
-                    task_medium = task[7] if len(task) > 7 else "Offline"
+                    task_id, task_title, task_category, task_video_url, task_xp = task[0:5]
+                    task_summary = task[6]
                     emoji = config.SUBJECT_EMOJIS.get(task_category, "📋")
                     just_done = st.session_state.pop(f"just_completed_{task_id}", False)
-                    render_completed_mission_card(task_title, task_category, task_xp * 2 if is_boss == 1 else task_xp, task_summary, emoji, just_done)
+                    render_completed_mission_card(task_title, task_category, task_xp, task_summary, emoji, just_done)

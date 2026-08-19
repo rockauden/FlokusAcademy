@@ -31,7 +31,10 @@ cols_chips = st.columns(4)
 quick_prompts = [
     ("🧩 Math Helper", "Can you help me understand today's math quest using the Socratic method?"),
     ("🧬 Science Guide", "Tell me how a volcano erupts step-by-step without giving me direct answers!"),
-    ("🐉 Boss Fight Tips", "I need coaching and encouragement for my boss fight quest today!"),
+    # Was "Boss Fight Tips" -- boss fights were retired 2026-08-18, so the chip
+    # pointed at a mechanic that no longer exists. Economics replaced it: it is
+    # the newest subject and the one most likely to need talking through.
+    ("📈 Economics Help", "Help me understand today's Free Market Rules economics lesson using the Socratic method!"),
     ("🧠 Riddle Time", "Can you give me a Socratic logic riddle to solve?")
 ]
 

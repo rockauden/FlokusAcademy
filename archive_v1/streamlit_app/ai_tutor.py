@@ -133,8 +133,7 @@ def parse_and_execute_schedule_command(user_input):
         "title": "Task Description",
         "category": "Math (Beast Academy)" | "Language Arts (Brave Writer)" | "Science (CrunchLabs)" | "Science (Outschool)" | "Social Studies (Tuttle Twins)" | "Logic (Brilliant.org)" | "Logic (Synthesis)" | "Logic (Chess.com)" | "Logic (Critical Thinking Co.)" | "Applied STEM (Tech Tails)" | "Applied STEM (Engineering Proj)",
         "date": "YYYY-MM-DD",
-        "xp_reward": integer,
-        "is_boss": boolean
+        "xp_reward": integer
       }}
     }}
     
@@ -165,9 +164,10 @@ def parse_and_execute_schedule_command(user_input):
             t_date_str = details.get("date", today_str)
             t_date = datetime.strptime(t_date_str, "%Y-%m-%d").date()
             t_xp = details.get("xp_reward", 10)
-            t_boss = 1 if details.get("is_boss") else 0
-            
-            database.add_task_to_db(t_title, t_category, "", t_xp, t_date, t_boss)
+
+            # Boss fights retired 2026-08-18 -- every assignment now pays the
+            # XP printed on its card, so the flag is always 0.
+            database.add_task_to_db(t_title, t_category, "", t_xp, t_date, 0)
             return f"✅ **Scheduled!** Created task *'{t_title}'* under *'{t_category}'* for {t_date_str} (💎 {t_xp} XP)."
         else:
             return "⚠️ Action not supported yet. Currently, only CREATE actions are supported."

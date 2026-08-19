@@ -2,13 +2,17 @@
 # FLOKUS ACADEMY CONFIGURATION
 # ==========================================
 
+# Brilliant.org was retired 2026-08-18. It held the Tuesday and Thursday slots,
+# which were the two heaviest days of the week, and freeing them is what let the
+# 120-lesson Free Market Rules economics course in without pushing Sonny to six
+# assignments a day. Nothing else moved.
 SUBJECT_EMOJIS = {
     "Math (Beast Academy)": "🧮",
     "Language Arts (Brave Writer)": "✍️",
     "Science (CrunchLabs)": "🧪",
     "Science (Outschool)": "🏫",
     "Social Studies (Tuttle Twins)": "🗺️",
-    "Logic (Brilliant.org)": "⚔️",
+    "Economics (Free Market Rules)": "📈",
     "Logic (Synthesis)": "🤖",
     "Logic (Chess.com)": "♟️",
     "Logic (Critical Thinking Co.)": "🧠",
@@ -20,14 +24,16 @@ PLATFORM_LINKS = {
     "Math (Beast Academy)": "https://beastacademy.com/login",
     "Language Arts (Brave Writer)": "https://bravewriter.com/",
     "Science (CrunchLabs)": "https://www.crunchlabs.com/",
-    "Science (Outschool)": "https://outschool.com/", 
+    "Science (Outschool)": "https://outschool.com/",
     "Social Studies (Tuttle Twins)": "https://tuttletwins.com/",
-    "Logic (Brilliant.org)": "https://brilliant.org/login",
+    # Free Market Rules ships as PDFs, not a web app -- there is no login to
+    # send Sonny to, so the card falls through to "offline assignment".
+    "Economics (Free Market Rules)": "",
     "Logic (Synthesis)": "https://www.synthesis.com/",
     "Logic (Chess.com)": "https://www.chess.com/login",
     "Logic (Critical Thinking Co.)": "https://www.criticalthinking.com/",
     "Applied STEM (Tech Tails)": "",
-    "Applied STEM (Engineering Proj)": "" 
+    "Applied STEM (Engineering Proj)": ""
 }
 
 FALLBACK_QUESTIONS = {
