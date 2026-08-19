@@ -1,7 +1,7 @@
 # Phase 1 Implementation Brief — Unblock Curriculum Authoring
 
 **For:** Claude Code, working in the `Flokus_Academy` repo
-**Companion doc:** `research_and_development/Flokus_Academy_Curriculum_Review.md` — read §3 (B1, B2, B5, B6, B10), §4, and §5.8 before starting. This brief is the executable subset.
+**Companion doc:** `docs/Flokus_Academy_Curriculum_Review.md` — read §3 (B1, B2, B5, B6, B10), §4, and §5.8 before starting. This brief is the executable subset.
 **Branch:** `feat/phase-1-curriculum-authoring`
 
 ---

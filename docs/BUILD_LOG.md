@@ -2,7 +2,7 @@
 
 **This file is the running state of the curriculum rebuild.** Every Claude Code session reads it first and updates it last. It is the only thing that survives between sessions — a session's own todo list does not.
 
-- **Plan:** `research_and_development/Flokus_Academy_Curriculum_Review.md` (defects are numbered B1–B10; build order is §9)
+- **Plan:** `docs/Flokus_Academy_Curriculum_Review.md` (defects are numbered B1–B10; build order is §9)
 - **Project context:** `.agents/skills/lms-architecture/SKILL.md` — load before any change
 - **Curriculum to load:** `research_and_development/Flokus_Curriculum_v1_Migrated.xlsx` — 272 lessons, 30 units, 14 routines
 
@@ -14,7 +14,7 @@
 
 **At the end of a session:** update the phase table, and append to *Decisions changed in flight* anything you did differently from the plan and why. A deviation is fine; a silent deviation is not — the next session will read the plan and assume it still holds.
 
-**When a phase completes:** write the next phase's brief into `research_and_development/PHASE<N>_BRIEF.md` using the review doc §5–§9 as the source, and the Phase 1 brief as the format. Then stop and let it be reviewed before building. Writing the brief is a separate act from executing it, deliberately — the shape of each phase depends on what the last one turned up.
+**When a phase completes:** write the next phase's brief into `docs/PHASE<N>_BRIEF.md` using the review doc §5–§9 as the source, and the Phase 1 brief as the format. Then stop and let it be reviewed before building. Writing the brief is a separate act from executing it, deliberately — the shape of each phase depends on what the last one turned up.
 
 ---
 

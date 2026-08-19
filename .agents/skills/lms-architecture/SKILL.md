@@ -142,6 +142,6 @@ An earlier draft proposed also parsing pasted outlines and publisher PDFs. **Bot
 
 ## Where the detail lives
 
-- `research_and_development/Flokus_Academy_Curriculum_Review.md` — full architecture review, the ingest spec, the phased build order (B1–B10 are the numbered defects)
-- `research_and_development/PHASE1_BRIEF.md` — the current work: six items with acceptance criteria
+- `docs/Flokus_Academy_Curriculum_Review.md` — full architecture review, the ingest spec, the phased build order (B1–B10 are the numbered defects)
+- `docs/PHASE1_BRIEF.md` — the current work: six items with acceptance criteria
 - `research_and_development/Flokus_Curriculum_v1_Migrated.xlsx` — the 2026–27 curriculum, migrated from v1: 272 lessons + 14 routines
