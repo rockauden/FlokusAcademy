@@ -18,7 +18,7 @@ abandoned; V2 is where this is going, and V1 is what works while it gets there.
 | Where | `archive_v1/streamlit_app/` — the folder name is wrong, see below | `backend/` and `frontend/` |
 | Stack | Python · Streamlit · SQLite | Python · FastAPI · SQLAlchemy 2.0 async · Postgres · Alembic · Vue 3 · Vite · Pinia |
 | Data | `archive_v1/streamlit_app/flokus.db`, untracked | Postgres, schema by Alembic migration |
-| Deployed | Nowhere. It runs on the machine in the schoolroom. | Nowhere yet. Railway is the target. |
+| Deployed | Nowhere. It runs on the machine in the schoolroom. | Railway — `api.flokusacademy.com` / `app.flokusacademy.com`. Live, but it cannot run the school day yet. |
 | Checked by | `audit_schedule.py`, run by hand after a rebuild | Playwright e2e and the migration chain, in CI |
 | Accounts | One parent PIN, one student. No hosting, no accounts. | Multi-student in the model, not yet in the API |
 
@@ -55,11 +55,14 @@ muscle memory all point at it, and renaming a running system mid-year buys nothi
 
 The README inside that folder is older than this one and still says the app is "not deployed and
 not maintained" and that the live system is V2 at `api.flokusacademy.com` / `app.flokusacademy.com`.
-That was an intention, not a fact — those hosts serve nothing today. Believe this file over that one.
+Half right: V2 *is* deployed at those hosts (confirmed live 24 Aug 2026), but it is not the live
+*system* — it cannot run the school day yet, and V1 remains the system of record. Believe this
+file over that one.
 
-**There are two `flokus.db` files.** The live one is `archive_v1/streamlit_app/flokus.db`. The one
-at the repository root is a stale copy from 13 August 2026, taken before the year was rebuilt.
-Nothing reads it. Do not point anything at it.
+**The live database is `archive_v1/streamlit_app/flokus.db`.** A stale root-level copy from
+13 August 2026 (taken before the year was rebuilt, read by nothing) was moved to
+`scratch/flokus.db.stale-2026-08-13` on 24 August 2026 so it can no longer be pointed at by
+mistake.
 
 Three point-in-time backups sit beside the live database, all untracked:
 
@@ -88,6 +91,7 @@ Three point-in-time backups sit beside the live database, all untracked:
 
 | Document | What it tells you | State |
 |---|---|---|
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | The consolidation roadmap — from two versions on four branches to one stable V2 in production | Current |
 | [`docs/SCHEDULE_2026-27.md`](docs/SCHEDULE_2026-27.md) | The year as it now stands — 38 weeks, 184 school days, 817 assignments, 24 days off, and the weekly rhythm | Current |
 | [`docs/CURRICULUM.md`](docs/CURRICULUM.md) | Lesson-by-lesson listing of the year | **Superseded.** Describes the 677-assignment year from before the rebuild. Kept because it is the only prose record of that state. |
 | [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) | Running state of the V2 build — phase table, exit criteria, decisions changed in flight | Current for V2. Says nothing about V1. |
@@ -163,9 +167,11 @@ on every lesson and still totals in the parent view.
 ## Status, plainly
 
 - **V1** — in production, running the 2026–27 year since 19 August 2026. Single user, local, no
-  hosting. The work that made it fit for the year is on the `school-year-2026-27` branch.
-- **V2** — in development on `feat/phase-1-curriculum-authoring`. Phase 1 done, the manual pilot
-  next, then the importer, then the release model. It has never run a school day.
+  hosting.
+- **V2** — in development on `main`, which since 24 August 2026 contains everything (the former
+  `feat/phase-1-curriculum-authoring` and `school-year-2026-27` branches were consolidated into
+  it). Phase 1 done and deployed, the manual pilot next, then the importer, then the release
+  model. Deployed at `app.flokusacademy.com`; it has never run a school day.
 - **The public page** — [flokus.org/academy](https://flokus.org/academy), written from
   [`docs/academy-site-copy.md`](docs/academy-site-copy.md).
 
