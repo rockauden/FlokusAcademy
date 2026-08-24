@@ -96,6 +96,19 @@ time. All figures below are from `flokus.db.original-677-backup`.
 In development. Has never run a school day. V1 keeps running until V2 can take one over without
 anyone noticing the change.
 
+### 2026-08-24 — Phase 1 reaches production; the repo becomes one branch
+
+- All branches consolidated into `main`: `school-year-2026-27` already contained every commit
+  from `main`, `feat/phase-1-curriculum-authoring` and the (already-merged)
+  `hardening/phase-1-2-production-readiness`, so `main` was fast-forwarded to it and the two
+  contained branches deleted.
+- Deployed to Railway. The three Phase 1 migrations ran against Postgres for the first time —
+  the oldest carried risk in `docs/BUILD_LOG.md` — via the pre-deploy `alembic upgrade head`
+  step; `/health/ready` confirms `c3a91d4e2f70`.
+- `docs/ROADMAP.md` added: the consolidation path from here to V2 running the school day.
+- README corrected: the app hosts were serving V2 (pre-Phase-1) all along, not "nothing".
+  Stale root `flokus.db` and two untracked walkthrough HTML files moved to `scratch/`.
+
 ### 2026-08-17 — Phase 1: curriculum authoring unblocked
 
 - Program and unit managers in the admin UI, and a unit picker on the task form. The backend CRUD

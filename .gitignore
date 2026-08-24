@@ -30,3 +30,6 @@ Thumbs.db
 
 # SQLite point-in-time backups kept beside the live file
 *.db.*-backup
+
+# Session working space for undeletable files (this environment can move but not delete)
+_to_delete/

@@ -86,6 +86,16 @@ permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
 
+### 2026-08-24 — Branches consolidated into `main`; Phase 1 deployed to production
+
+A survey (see `docs/ROADMAP.md`) found production live at `api.flokusacademy.com` but
+sitting at `17280a99fab3` — pre-Phase-1 — while all Phase 1 work sat unmerged.
+`school-year-2026-27` was a strict superset of every branch, so `main` was
+fast-forwarded to it, and `feat/phase-1-curriculum-authoring` and
+`hardening/phase-1-2-production-readiness` (both fully contained) were deleted.
+One branch is the truth now; feature branches stay short-lived against `main`.
+The deploy that followed settled the Postgres question below.
+
 ### 2026-08-17 — `Lesson.priority` landed in Phase 1, so Phase 2 item 8 is now partly done
 
 The phase table assigns `priority` to Phase 2 alongside `source_key`, but brief
@@ -196,20 +206,15 @@ Things deliberately left undecided. Answer them when they become blocking, not b
 - **`resource_path` / file attachments.** Dead field, no upload endpoint by design. Only revisit if worksheets need attaching to lessons — and treat it as its own feature, not part of ingest.
 - **Beast Academy Level 3 timing.** Units get imported as `planned` in Phase 4; when to activate them is a teaching decision, not a build one.
 
-- **The Phase 1 migrations have never run on Postgres.** There is no local
-  Postgres, so `a1c4e7b9d203` → `b2f5083ac611` → `c3a91d4e2f70` have only been
-  exercised on SQLite (`alembic check` clean, chain applies from scratch). The
-  two that write data bind `app.tenant_id` first, because `app_config` and
-  `lessons` both carry `FORCE ROW LEVEL SECURITY` and the policy doubles as the
-  `WITH CHECK` on INSERT — without it the inserts are rejected outright and the
-  `dependency_mode` UPDATE matches zero rows *while still reporting success*.
-  That reasoning is sound and untested. **Settle it the cheap way:**
-  `curl -s https://api.flokusacademy.com/health/ready` after the deploy should
-  report `c3a91d4e2f70`; then confirm `school_days` came back from
-  `GET /api/config/` rather than falling through to the Mon–Thu default, which
-  is what a silently-skipped insert would look like. Precedent says this is a
-  real risk, not a theoretical one — commit `76ed5c9` fixed a Postgres-only
-  `server_default` rejection that SQLite had happily accepted.
+- ~~**The Phase 1 migrations have never run on Postgres.**~~ **Settled
+  2026-08-24.** The consolidation deploy ran `a1c4e7b9d203` → `b2f5083ac611` →
+  `c3a91d4e2f70` against production Postgres via the pre-deploy
+  `alembic upgrade head` step; `/health/ready` reports `c3a91d4e2f70`. The RLS
+  reasoning (both data-writing migrations bind `app.tenant_id` first, because
+  the policy doubles as the `WITH CHECK` on INSERT) held. Remaining sliver:
+  confirm `GET /api/config/` returns `school_days` from the table rather than
+  the Mon–Thu fallback — that check needs a teacher login, so it happens the
+  first time the admin UI is opened against production (the Pilot covers it).
 
 - **`completion.spec.js` *XP counts up to the amount actually awarded* flaked
   once.** One failure in nine full runs; the other eight were clean, including
