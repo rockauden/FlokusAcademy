@@ -85,6 +85,42 @@ watch(() => form.value.course_id, (next, previous) => {
   if (next !== '' && next !== null && next !== undefined) unitsStore.fetchUnits(next)
 }, { immediate: true })
 
+const selectedUnit = computed(() => {
+  if (!form.value.module_id) return null
+  return unitsForCourse.value.find(u => u.id === Number(form.value.module_id)) || null
+})
+
+// "Staged" here means the unit is not released: planned, completed or
+// abandoned. The scheduler already refuses to date lessons in such units —
+// but the scheduler is only one of two doors a date can come through. This
+// form is the other, and its date field defaults to today.
+const stagedUnit = computed(() => selectedUnit.value !== null && selectedUnit.value.status !== 'active')
+
+// Picking an unreleased unit blanks the date. The default-to-today exists so
+// a quick add actually reaches the student — but for a lesson going into a
+// planned unit, "reaches the student" is precisely the wrong outcome: it
+// walks around the unit-status gate and lands in the student's day while the
+// unit it belongs to is still invisible. Found in the wild on the first
+// pilot run (2026-08-25): Vols 2–3 were planned, the form dated their
+// lessons anyway, and the student's day showed them.
+//
+// Clear, never fill: switching back to an active unit does not restore
+// today's date, because the teacher may have blanked it on purpose and a
+// watcher that re-fills a field the user emptied is how forms get called
+// untrustworthy. And this watcher only runs on a *change* of unit — not on
+// mount — so opening an existing lesson for editing never silently strips
+// the date it already has.
+watch(() => form.value.module_id, (next, previous) => {
+  if (next === previous) return
+  if (stagedUnit.value) {
+    form.value.scheduled_date = ''
+    // An undated lesson cannot be pinned — the scheduler skips locked rows
+    // and would never place an undated locked one. Same rule submit()
+    // applies; clearing it here keeps the checkbox from lying.
+    form.value.date_locked = false
+  }
+})
+
 // Blank inputs come out of the DOM as '', but the API types these as
 // Optional[date] / Optional[int] — '' is not a valid empty value for either
 // and fails validation with a 422. Leaving the date blank is the normal case
@@ -208,6 +244,16 @@ function submit() {
       <div class="form-group">
         <label>Scheduled Date</label>
         <input type="date" v-model="form.scheduled_date" />
+        <p v-if="stagedUnit && !form.scheduled_date" class="text-muted hint staged-hint">
+          This unit is {{ selectedUnit.status }}, so the date was cleared: the
+          lesson stays staged — invisible to the student — until you activate
+          the unit and recalculate the schedule.
+        </p>
+        <p v-else-if="stagedUnit && form.scheduled_date" class="form-warning hint staged-warning">
+          This unit is {{ selectedUnit.status }}, but a date set here still
+          puts the lesson in the student's day. Leave the date blank unless
+          that is what you mean.
+        </p>
       </div>
     </div>
 
@@ -243,6 +289,9 @@ function submit() {
 .form-error {
   color: var(--color-danger, #e05252);
   margin-top: var(--space-md);
+}
+.form-warning {
+  color: var(--color-warning, #d99a2b);
 }
 .hint {
   font-size: 0.8125rem;

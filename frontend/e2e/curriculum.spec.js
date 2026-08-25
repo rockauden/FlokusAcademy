@@ -247,4 +247,60 @@ test.describe('unit picker on the task form', () => {
     await form.locator('select').first().selectOption('1')
     await expect(form.locator('.unit-picker')).toHaveValue('')
   })
+
+  test('choosing a planned unit clears the default date, so the lesson stays staged', async ({ page }) => {
+    // The scheduler's unit-status gate only guards dates the *scheduler*
+    // assigns. This form is the other door a date can come through: its date
+    // field defaults to today so quick adds reach the student — which meant a
+    // lesson authored into a planned unit was born already scheduled and
+    // appeared in the student's day, gate or no gate. Found on the first
+    // production pilot, 2026-08-25.
+    await login(page, 'teacher')
+    const stamp = Date.now()
+    const program = await apiCall(page, 'post', '/courses/', {
+      title: `Staging program ${stamp}`,
+      subject_area: 'Test',
+      platform: 'e2e',
+    })
+    const planned = await apiCall(page, 'post', '/modules/', {
+      title: `Planned unit ${stamp}`,
+      course_id: program.id,
+      status: 'planned',
+    })
+    const active = await apiCall(page, 'post', '/modules/', {
+      title: `Active unit ${stamp}`,
+      course_id: program.id,
+      status: 'active',
+    })
+
+    await page.goto('/admin/tasks')
+    await page.getByRole('button', { name: 'Quick Add' }).click()
+    const form = page.locator('.task-form')
+    const dateField = form.locator('input[type="date"]')
+
+    // The quick-add convenience survives choosing a program alone…
+    await form.locator('select').first().selectOption(String(program.id))
+    await expect(dateField).not.toHaveValue('')
+
+    // …and an active unit keeps it too — only unreleased units clear it.
+    await form.locator('.unit-picker').selectOption(String(active.id))
+    await expect(dateField).not.toHaveValue('')
+
+    await form.locator('.unit-picker').selectOption(String(planned.id))
+    await expect(dateField).toHaveValue('')
+
+    // All the way to the database: the saved lesson is staged, not scheduled.
+    const title = `Staged lesson ${stamp}`
+    await form.locator('input[type="text"]').first().fill(title)
+    const posted = page.waitForResponse(
+      r => r.url().includes('/api/tasks/') && r.request().method() === 'POST'
+    )
+    await form.getByRole('button', { name: 'Save Task' }).click()
+    await posted
+
+    const tasks = await apiCall(page, 'get', `/tasks/?course_id=${program.id}`)
+    const created = tasks.find(t => t.title === title)
+    expect(created).toBeTruthy()
+    expect(created.scheduled_date).toBeNull()
+  })
 })
