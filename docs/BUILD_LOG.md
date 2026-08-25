@@ -22,9 +22,9 @@
 
 | Phase | What | Status | Branch | Brief |
 |---|---|---|---|---|
-| **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` | `PHASE1_BRIEF.md` ✅ |
-| **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ⬜ Ready to start | — | — |
-| **2** | The importer — canonical CSV schema, `source_key`, `priority`, validate/commit, preview screen | ⬜ Blocked on Pilot | `feat/phase-2-curriculum-import` | to write |
+| **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` (merged) | `PHASE1_BRIEF.md` ✅ |
+| **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ✅ Done 2026-08-25 | — | — |
+| **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ⬜ Ready to start | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
 | **Load** | Import the workbook subject by subject, all units `planned` except the current one | ⬜ Blocked on 2 | — | — |
 | **3** | Protect the student side — author/assign/release split, day cap, recurring routines, release-by-priority, unassign | ⬜ Blocked on Load | `feat/phase-3-release-model` | to write |
 | **4** | Extras — BA Level 3 units as `planned`, `grade_level` on the portfolio | ⬜ | — | to write |
@@ -55,10 +55,16 @@ Migrations added, chained off `17280a99fab3`:
 Both carried risks are recorded under *Known open questions* rather than here:
 the migrations have never run on Postgres, and one completion spec flaked once.
 
-**Pilot** *(no code — this is a manual check that Phase 1 actually works)*
-- Tuttle Twins created with 4 units, Vol 1 `active`, Vols 2–3 `planned`
-- Add a sick day. Only Vol 1's assignments moved. Vols 2–3 still have `scheduled_date IS NULL`
-- The student view shows only Vol 1 work
+**Pilot** — run against production 2026-08-25, and it earned its keep twice.
+- ✅ Tuttle Twins created with units; Vol 1 `active`, the rest `planned`
+- ✅ A sick day moved only the active unit's dated work; staged lessons stayed `scheduled_date IS NULL`
+- ✅ The student view showed only released work
+- **Finding:** lessons authored into planned units *appeared in the student's day anyway*,
+  because the task form's date field defaults to today and a form-set date bypasses the
+  scheduler's unit-status gate entirely — two doors, one gate. Fixed in `91ad860`
+  (see *Decisions changed in flight*), verified in production, covered by a new e2e spec.
+- The `GET /api/config/` `school_days` check also passed implicitly: the scheduler used
+  Mon–Thu placement and honoured the calendar, and the config API served the admin UI.
 
 **Phase 2**
 - Re-importing an unchanged CSV is a no-op; re-importing a corrected one updates without touching completion history or XP
@@ -85,6 +91,22 @@ Added `paused` alongside planned/active/completed/abandoned. `abandoned` implied
 permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
+
+### 2026-08-25 — The pilot found the form's second door
+
+The unit-status gate (§2b) guards only the dates the *scheduler* assigns. The
+task form is the other door a date can come through: its field defaults to
+today so a quick add reaches the student — so a lesson authored into a
+`planned` unit was born already scheduled, gate or no gate. The teacher found
+it on the first production pilot, exactly the way it would have bitten during
+the year.
+
+Fix (`91ad860`): choosing an unreleased unit clears the date and says why on
+screen; a date typed back in is warned about, not blocked, matching the
+calendar model's manual-placement philosophy. The clear fires only on a
+*change* of unit — editing an existing lesson never strips the date it has —
+and never re-fills a field the user emptied. Phase 3's release model still
+owns the deeper question of whether the form should default the date at all.
 
 ### 2026-08-24 — Branches consolidated into `main`; Phase 1 deployed to production
 
