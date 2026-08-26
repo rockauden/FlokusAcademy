@@ -389,3 +389,48 @@ class UfaComplianceSummary(BaseModel):
     remaining: float
     by_category: Dict[str, float]
     by_status: Dict[str, float]
+
+# --- Curriculum import (Phase 2) ---
+
+class CurriculumImportRequest(BaseModel):
+    # CSV text inside JSON, read client-side with FileReader. Deliberately not
+    # a multipart upload: the upload mount and aiofiles were removed in H-06
+    # and the importer must not quietly reopen that decision.
+    csv_text: str
+
+class ImportRowIssue(BaseModel):
+    # `row` is the spreadsheet's own row number (header = 1), so "row 47" in
+    # the report is row 47 in Excel — the whole point of the field.
+    row: int
+    message: str
+
+class ImportRowPreview(BaseModel):
+    row: int
+    program: str
+    unit: str
+    title: str
+    action: Literal['new', 'update', 'unchanged']
+
+class ImportReport(BaseModel):
+    errors: List[ImportRowIssue]
+    programs_to_create: List[str]
+    units_to_create: List[str]
+    new: int
+    updated: int
+    unchanged: int
+    total_rows: int
+    rows: List[ImportRowPreview]
+
+class ImportCommitResult(ImportReport):
+    import_id: str
+
+class CurriculumRollbackRequest(BaseModel):
+    import_id: str
+    # Completed work blocks a rollback unless the teacher forces it — and
+    # forcing reverses the XP through the ledger first, never by deletion.
+    force: bool = False
+
+class RollbackResult(BaseModel):
+    lessons_deleted: int
+    assignments_deleted: int
+    xp_reversed: int

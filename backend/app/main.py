@@ -23,7 +23,7 @@ from app.services.retention import purge_old_chat_history
 
 configure_logging(settings.LOG_LEVEL, settings.LOG_FORMAT)
 
-from app.routers import auth, courses, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students, app_config
+from app.routers import auth, courses, curriculum, modules, tasks, schedule, events, expenses, projects, analytics, ai_tutor, rewards, students, app_config
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,7 @@ app.add_middleware(
 # Include Routers
 app.include_router(auth.router)
 app.include_router(courses.router)
+app.include_router(curriculum.router)
 app.include_router(modules.router)
 app.include_router(tasks.router)
 app.include_router(schedule.router)

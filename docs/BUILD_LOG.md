@@ -24,8 +24,8 @@
 |---|---|---|---|---|
 | **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` (merged) | `PHASE1_BRIEF.md` ✅ |
 | **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ✅ Done 2026-08-25 | — | — |
-| **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ⬜ Ready to start | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
-| **Load** | Import the workbook subject by subject, all units `planned` except the current one | ⬜ Blocked on 2 | — | — |
+| **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ✅ Done 2026-08-25 | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
+| **Load** | Import the workbook subject by subject, all units `planned` except the current one | ⬜ Ready to start | — | — |
 | **3** | Protect the student side — author/assign/release split, day cap, recurring routines, release-by-priority, unassign | ⬜ Blocked on Load | `feat/phase-3-release-model` | to write |
 | **4** | Extras — BA Level 3 units as `planned`, `grade_level` on the portfolio | ⬜ | — | to write |
 
@@ -66,11 +66,13 @@ the migrations have never run on Postgres, and one completion spec flaked once.
 - The `GET /api/config/` `school_days` check also passed implicitly: the scheduler used
   Mon–Thu placement and honoured the calendar, and the config API served the admin UI.
 
-**Phase 2**
-- Re-importing an unchanged CSV is a no-op; re-importing a corrected one updates without touching completion history or XP
-- A malformed row reports *its row number*, not a bare 422
-- Commit is one transaction, one flush — not one flush per row
-- Import of the full workbook completes and the student's day is still empty (everything `planned`)
+**Phase 2** — all met, 2026-08-25. `npm run test:e2e`: 71 passed, 5 new in `import.spec.js`.
+- ✅ Re-importing an unchanged CSV is a no-op; a corrected one updates without touching completion history or XP — *re-importing an unchanged file is a no-op* and *a corrected re-import updates the lesson without touching completion history*
+- ✅ A malformed row reports *its row number* — *a malformed row blocks commit, names its row, and is fixable in place*, driven through the real screen with an Excel-style BOM + CRLF fixture
+- ✅ Commit is one transaction, one flush — new rows are wired through relationships (`lesson=`, `program=`, `unit=`) so the whole graph resolves in a single `flush()`; the router owns the commit
+- ✅ Imported assignments arrive staged (`scheduled_date IS NULL`, unpinned) — *the year arrives staged*
+- Rollback shipped alongside: refuses when completed work exists (409 naming the lessons), reverses XP through the ledger under `force` — *rollback undoes a fresh import, refuses completed work, reverses XP under force*
+- The Load step remains: run the real workbook through it, subject by subject
 
 **Phase 3**
 - Authoring a lesson no longer auto-assigns it to every student
@@ -91,6 +93,26 @@ Added `paused` alongside planned/active/completed/abandoned. `abandoned` implied
 permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
+
+### 2026-08-25 — Phase 2 deviations, all small and all recorded
+
+Three places the build read the brief's intent rather than its letter:
+
+- **A unique INDEX, not a UniqueConstraint**, enforces `(tenant_id,
+  source_key)`. SQLite cannot ALTER a constraint onto an existing table, so
+  the constraint form would have forced a batch-mode rebuild of `lessons` for
+  identical enforcement. Same rule, both engines, no rebuild (`e5a2b8d17c40`).
+- **Unknown header columns are an error, not ignored.** A misspelled optional
+  column (`prioirty`) that was silently dropped would look exactly like data
+  loss to the person who filled it in. Refusing by name costs one fix-and-retry.
+- **"Editable preview grid" is implemented as editable *error lines*.** Good
+  rows preview read-only; a row with an error exposes its raw CSV line for an
+  in-place fix, and every edit goes back through the server's validator. A
+  full grid editor would be a second spreadsheet — the workbook stays the
+  place curriculum is edited.
+
+The brief's own recorded deviation stands: imported units default to
+`planned`, so a loaded year arrives dark until released.
 
 ### 2026-08-25 — The pilot found the form's second door
 

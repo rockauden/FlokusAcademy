@@ -206,6 +206,41 @@ class LessonRepository:
         return result.scalars().first()
 
     @staticmethod
+    async def list_by_source_keys(
+        db: AsyncSession, tenant_id: int, source_keys: Sequence[str]
+    ) -> Sequence[Lesson]:
+        """Existing lessons matching the importer's idempotency keys.
+
+        One query for the whole file rather than one per row — a 272-row
+        import should not be 272 round trips just to learn what it already
+        knows.
+        """
+        if not source_keys:
+            return []
+        result = await db.execute(
+            select(Lesson).where(
+                Lesson.tenant_id == tenant_id, Lesson.source_key.in_(source_keys)
+            )
+        )
+        return result.scalars().all()
+
+    @staticmethod
+    async def list_by_import_id(
+        db: AsyncSession, tenant_id: int, import_id: str
+    ) -> Sequence[Lesson]:
+        """Every lesson a single import created — the unit of rollback.
+
+        Assignments are eager-loaded because rollback must inspect completion
+        before deleting, and lazy-loading inside an async session raises.
+        """
+        result = await db.execute(
+            select(Lesson)
+            .options(joinedload(Lesson.assignments))
+            .where(Lesson.tenant_id == tenant_id, Lesson.import_id == import_id)
+        )
+        return result.scalars().unique().all()
+
+    @staticmethod
     async def list_students(db: AsyncSession, tenant_id: int) -> Sequence[User]:
         """Students in the tenant — who a newly authored lesson gets assigned to."""
         result = await db.execute(

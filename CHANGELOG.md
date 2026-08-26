@@ -96,6 +96,30 @@ time. All figures below are from `flokus.db.original-677-backup`.
 In development. Has never run a school day. V1 keeps running until V2 can take one over without
 anyone noticing the change.
 
+### 2026-08-25 — Phase 2: the importer
+
+The loading dock. A CSV exported from the curriculum workbook goes through
+validate → preview → one-transaction commit, idempotently, so the spreadsheet
+is now the thing the curriculum is maintained in all year.
+
+- `POST /api/curriculum/validate` — parses with the stdlib `csv` module (BOM
+  and CRLF from Excel handled), resolves programs and units **by name**, and
+  reports errors keyed by spreadsheet row number. Zero new dependencies.
+- `POST /api/curriculum/commit` — re-validates server-side, writes the whole
+  file in one transaction with one flush, returns an `import_id`. Every
+  assignment arrives staged: importing never sets dates.
+- `POST /api/curriculum/rollback` — undoes one import exactly. Refuses if
+  completed work exists under it; with `force`, reverses the earned XP through
+  the append-only ledger before deleting.
+- `Lesson.source_key` (unique per tenant, migration `e5a2b8d17c40`) makes
+  re-import an update: an unchanged file is a no-op, a corrected one updates
+  lessons without touching completion history, pins, or XP.
+- The Import Curriculum screen: choose a CSV, preview with row-numbered
+  errors fixable in place, commit disabled until clean, undo offered after.
+- Also: choosing an unreleased unit on the task form now clears the default
+  date (found by the production pilot on 2026-08-25 — see BUILD_LOG).
+- 71 e2e tests pass; 5 new in `import.spec.js`, 1 in `curriculum.spec.js`.
+
 ### 2026-08-24 — Phase 1 reaches production; the repo becomes one branch
 
 - All branches consolidated into `main`: `school-year-2026-27` already contained every commit

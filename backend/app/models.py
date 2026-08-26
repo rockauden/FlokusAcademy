@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional
-from sqlalchemy import Integer, String, Boolean, Date, DateTime, Float, ForeignKey, UniqueConstraint, false, true
+from sqlalchemy import Index, Integer, String, Boolean, Date, DateTime, Float, ForeignKey, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -86,6 +86,13 @@ class Lesson(Base):
     or reused in a later academic year without its history following it.
     """
     __tablename__ = 'lessons'
+    # A unique *index* rather than a UniqueConstraint, deliberately: SQLite
+    # cannot ALTER a table to add a constraint, so the constraint form would
+    # force a full table rebuild in the migration for no extra enforcement —
+    # a unique index polices the same rule on both engines. NULLs never
+    # collide under either engine, so hand-authored lessons (source_key NULL)
+    # are untouched.
+    __table_args__ = (Index('uix_tenant_source_key', 'tenant_id', 'source_key', unique=True),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     tenant_id: Mapped[int] = mapped_column(Integer, nullable=False, server_default='1', index=True)
     unit_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey('units.id', ondelete="SET NULL"), nullable=True)
@@ -112,6 +119,16 @@ class Lesson(Base):
     medium: Mapped[str] = mapped_column(String, default='offline')
     ufa_eligible: Mapped[bool] = mapped_column(Boolean, default=True)
     ufa_hours_credit: Mapped[float] = mapped_column(Float, default=0.0)
+    # Importer idempotency key: slug(program)|slug(unit)|slug(title), unique
+    # per tenant. This is what turns re-importing a corrected spreadsheet into
+    # an *update* instead of a duplication — the single property that makes
+    # the spreadsheet the place curriculum is maintained all year rather than
+    # a one-shot seed. NULL for lessons authored by hand through the form.
+    source_key: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    # Which import created this lesson (uuid4), so one bad import can be
+    # rolled back precisely without touching hand-authored work or other
+    # imports. Never overwritten by a later update-import: it records origin.
+    import_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     program = relationship("Program", back_populates="lessons")

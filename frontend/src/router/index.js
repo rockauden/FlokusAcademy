@@ -26,6 +26,7 @@ const routes = [
       // /admin/units would have to start by asking which one.
       { path: 'programs', component: () => import('../views/admin/ProgramManagerView.vue') },
       { path: 'tasks', component: () => import('../views/admin/TaskManagerView.vue') },
+      { path: 'import', component: () => import('../views/admin/ImportView.vue') },
       { path: 'schedule', component: () => import('../views/admin/ScheduleView.vue') },
       { path: 'calendar', component: () => import('../views/admin/CalendarManagerView.vue') },
       { path: 'projects', component: () => import('../views/admin/ProjectManagerView.vue') },
