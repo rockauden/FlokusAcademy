@@ -25,9 +25,9 @@
 | **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` (merged) | `PHASE1_BRIEF.md` ✅ |
 | **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ✅ Done 2026-08-25 | — | — |
 | **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ✅ Done 2026-08-25 | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
-| **Load** | Import the workbook subject by subject, all units `planned` except the current one | ⬜ Ready to start | — | — |
-| **3** | Protect the student side — author/assign/release split, day cap, recurring routines, release-by-priority, unassign | ⬜ Blocked on Load | `feat/phase-3-release-model` | to write |
-| **4** | Extras — BA Level 3 units as `planned`, `grade_level` on the portfolio | ⬜ | — | to write |
+| **Load** | Import the workbook subject by subject | ⚠️ Stopped after Tuttle Twins — the remaining subjects go in through Phase 3's front door instead. See *the loop, not the migration* below. | — | — |
+| **3** | **The weekly loop** — paste-to-add-a-unit, unit rhythm, the week planner, day cap + behind-strip | ⬜ Ready to start | `feat/phase-3-weekly-loop` | `PHASE3_BRIEF.md` ✅ |
+| **4** | Recurring routines (the 14 definitions), BA Level 3 as `planned`, `grade_level` on the portfolio | ⬜ | — | to write |
 
 Status values: ⬜ Not started · 🟡 In progress · ✅ Done · ⚠️ Done with deviations (see below)
 
@@ -93,6 +93,48 @@ Added `paused` alongside planned/active/completed/abandoned. `abandoned` implied
 permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
+
+### 2026-08-26 — The loop, not the migration: Phase 3 redefined, the Load stopped
+
+**The product owner rejected the seeding workflow after using it once, and he
+was right.** Recorded in full because it invalidates a decision the review doc
+states as settled.
+
+Tuttle Twins imported cleanly — 72 lessons, correct staging, the whole Phase
+1+2 machine proven on real curriculum. Then: *"This doesn't feel intuitive…
+I should just do my full curriculum offline and then add a unit at a time,
+and have more granular control over the lessons. Every weekend I'll make sure
+the week ahead looks good."*
+
+The diagnosis: **the importer was built for the migration, and handed over as
+the everyday workflow.** Getting 272 legacy lessons out of V1 is a one-time
+problem, and the ceremony that solves it well — build a workbook, export a
+sheet, adjust unit statuses, import a whole subject — is far too heavy for the
+thing he actually does fifty times a year, which is *add the next unit and
+check the week*. Two different products; I conflated them.
+
+Consequences:
+
+- **The Load step is stopped at one subject.** Beast Academy, Brave Writer,
+  Critical Thinking Co. and CrunchLabs will go in through Phase 3's front
+  door, one unit at a time, by him. Cutting four more CSVs would have been
+  four more units of the wrong workflow.
+- **Phase 3 is now "the weekly loop"** (`PHASE3_BRIEF.md`), not "protect the
+  student side". Most of the old Phase 3 survives inside it, reframed: the day
+  cap and unassign are still there, now paired with the teacher-side backlog
+  strip that makes them decisions rather than silent policy.
+- **Review §5.1's "one bulk path, one single-item path" is preserved in
+  substance, not in letter.** Paste-a-list is a new *front end* over the Phase
+  2 validate/commit service — same parser, same validator, same `source_key`
+  rule — so there is still one bulk pipe. The CSV screen stays behind a link
+  as the migration escape hatch. This is the one place to be vigilant: if a
+  second parser ever appears, the rule has actually been broken.
+- **Recurring routines slip to Phase 4.** They are still needed and still
+  right; the loop has to feel good before another concept enters it.
+
+The general lesson, worth keeping: *a workflow that is correct for loading a
+year is not automatically correct for running one.* Ask which of the two a
+feature serves before designing it.
 
 ### 2026-08-25 — Phase 2 deviations, all small and all recorded
 
