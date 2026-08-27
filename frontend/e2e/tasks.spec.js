@@ -79,7 +79,7 @@ test.describe('task form validation', () => {
     await page.locator('.task-form input[type="text"]').first().fill('No course chosen')
     await page.getByRole('button', { name: 'Save Task' }).click()
 
-    await expect(page.locator('.form-error')).toHaveText(/course/i)
+    await expect(page.locator('.form-error')).toHaveText(/class/i)
     expect(posted).toBe(0)
   })
 

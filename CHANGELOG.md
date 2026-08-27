@@ -96,6 +96,47 @@ time. All figures below are from `flokus.db.original-677-backup`.
 In development. Has never run a school day. V1 keeps running until V2 can take one over without
 anyone noticing the change.
 
+### 2026-08-27 — The week planner; the importer and the rolling scheduler removed
+
+The app stopped trying to manage curriculum and started helping plan a week.
+One student with four or five items a day is fifteen lines of typing on a
+Sunday — every mechanism built to avoid that typing cost more to operate than
+the typing itself.
+
+#### Added
+
+- **Plan the Week** (`/admin/week`) — classes down the side, days across the
+  top. Click a cell, type what Sonny does for that class that day. Days show
+  their item count and total minutes, and mark themselves when overloaded.
+- Unfinished work from before today appears in a strip above the grid, to be
+  moved up or dropped — surfaced to an adult rather than piling up on a
+  nine-year-old's morning.
+- `POST /api/courses/{id}/clear-unstarted` and a **Clear unstarted** button:
+  removes a class's planned-but-never-started work and keeps everything with
+  completed history, XP included.
+- `/api/week` — read a week, add an entry, move one, remove one.
+
+#### Changed
+
+- **Marking a day off no longer reschedules anything.** It reports what
+  unfinished work falls on that day and leaves it where it is.
+- Everything the planner creates is pinned to the day it was typed on.
+- "Programs & Units" is now **Classes**; the admin home is the week planner.
+
+#### Removed
+
+- The curriculum importer: `/api/curriculum/*`, the import screen, the CSV
+  pipeline and its `source_key` reconciliation. Four days old, and the wrong
+  product.
+- The rolling scheduler: `/api/schedule/recalculate`, `compute_rolling_schedule`
+  and `reschedule_from_today`. What remains of the module is the school-week
+  calendar, renamed `school_days.py`.
+- The unit manager, the units store, and the unit picker on the task form.
+  `Unit` stays in the database, unused and invisible — removing it would mean
+  a migration across live completion history for no visible gain.
+
+63 e2e tests pass, including one asserting that no recalculate endpoint exists.
+
 ### 2026-08-25 — Phase 2: the importer
 
 The loading dock. A CSV exported from the curriculum workbook goes through

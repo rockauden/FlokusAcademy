@@ -1,7 +1,6 @@
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useCoursesStore } from '../../stores/courses'
-import UnitManagerView from './UnitManagerView.vue'
 
 /**
  * Programs — the top tier of the curriculum model, and until now creatable
@@ -19,8 +18,6 @@ const coursesStore = useCoursesStore()
 const showInactive = ref(true)
 const error = ref('')
 const editingId = ref(null)
-// Which program's units are open below the list. Null means none.
-const unitsFor = ref(null)
 
 function blankProgram() {
   return {
@@ -101,15 +98,32 @@ async function toggleActive(program) {
       const { id, created_at, ...rest } = program
       await coursesStore.updateCourse(program.id, { ...rest, is_active: true })
     }
-    if (unitsFor.value?.id === program.id) unitsFor.value = null
     await load()
   } catch (e) {
     error.value = e.message
   }
 }
 
-function toggleUnits(program) {
-  unitsFor.value = unitsFor.value?.id === program.id ? null : program
+/**
+ * Delete a class's planned-but-never-started work.
+ *
+ * The escape hatch for a plan that has been abandoned. Two clicks, because
+ * one is too few for a delete and a confirm() dialog is worse than either.
+ * Completed work is kept by the server regardless of what is clicked here.
+ */
+const clearing = ref(null)
+
+async function clearUnstarted(program) {
+  try {
+    const result = await coursesStore.clearUnstarted(program.id)
+    clearing.value = null
+    error.value = result.lessons_deleted
+      ? `Removed ${result.lessons_deleted} unstarted item(s) from ${program.title}.`
+        + (result.completed_kept ? ` Kept ${result.completed_kept} with completed work.` : '')
+      : `Nothing unstarted to remove from ${program.title}.`
+  } catch (e) {
+    error.value = e.message
+  }
 }
 </script>
 
@@ -200,8 +214,11 @@ function toggleUnits(program) {
             </div>
             <div class="item-actions mt-sm">
               <button class="btn-ghost" @click="startEdit(p)">Edit</button>
-              <button class="btn-ghost" @click="toggleUnits(p)">
-                {{ unitsFor?.id === p.id ? 'Hide Units' : 'Units' }}
+              <button v-if="clearing !== p.id" class="btn-ghost" @click="clearing = p.id">
+                Clear unstarted
+              </button>
+              <button v-else class="btn-ghost danger" @click="clearUnstarted(p)">
+                Really clear — keeps finished work
               </button>
               <button class="btn-ghost" @click="toggleActive(p)">
                 {{ p.is_active ? 'Deactivate' : 'Reactivate' }}
@@ -212,7 +229,6 @@ function toggleUnits(program) {
       </div>
     </div>
 
-    <UnitManagerView v-if="unitsFor" :program="unitsFor" class="mt-lg" />
   </div>
 </template>
 

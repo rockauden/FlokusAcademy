@@ -19,19 +19,17 @@ export const useScheduleStore = defineStore('schedule', () => {
 
   // The schedule endpoints take their arguments as query parameters, not a
   // JSON body. The date parameter is named `date_val` on the API.
+  //
+  // These return what unfinished work falls on the day — marking a day off no
+  // longer moves anything, it reports. The caller decides.
   async function addSickDay(date) {
     const query = new URLSearchParams({ date_val: date })
-    await api.post(`/schedule/sick-day?${query}`)
+    return await api.post(`/schedule/sick-day?${query}`)
   }
 
   async function addHoliday(date, label = 'Holiday') {
     const query = new URLSearchParams({ date_val: date, label })
-    await api.post(`/schedule/holiday?${query}`)
-  }
-
-  async function recalculate(moduleId = null) {
-    const payload = moduleId ? { module_id: moduleId } : {}
-    await api.post('/schedule/recalculate', payload)
+    return await api.post(`/schedule/holiday?${query}`)
   }
 
   async function removeNonSchoolDay(id) {
@@ -40,5 +38,5 @@ export const useScheduleStore = defineStore('schedule', () => {
     await api.delete(`/schedule/calendar/${id}`)
   }
 
-  return { nonSchoolDays, loading, fetchCalendar, addSickDay, addHoliday, recalculate, removeNonSchoolDay }
+  return { nonSchoolDays, loading, fetchCalendar, addSickDay, addHoliday, removeNonSchoolDay }
 })

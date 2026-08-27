@@ -42,5 +42,9 @@ export const useCoursesStore = defineStore('courses', () => {
     return await api.delete(`/courses/${id}`)
   }
 
-  return { courses, loading, fetchCourses, createCourse, updateCourse, deactivateCourse }
+  async function clearUnstarted(id) {
+    return await api.post(`/courses/${id}/clear-unstarted`)
+  }
+
+  return { courses, loading, fetchCourses, clearUnstarted, createCourse, updateCourse, deactivateCourse }
 })

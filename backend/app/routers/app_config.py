@@ -25,7 +25,7 @@ from app.database import get_db
 from app.models import User
 from app.repository import AppConfigRepository
 from app.schemas import AppConfigValue
-from app.services.rolling_scheduler import DEFAULT_ACADEMIC_YEAR_START, WEEKDAY_NUMBERS
+from app.services.school_days import DEFAULT_ACADEMIC_YEAR_START, WEEKDAY_NUMBERS
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 

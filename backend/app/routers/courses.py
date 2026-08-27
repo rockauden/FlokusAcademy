@@ -2,10 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from app.database import get_db
-from app.schemas import CourseCreate, CourseUpdate, CourseResponse
+from app.schemas import ClearUnstartedResult, CourseCreate, CourseUpdate, CourseResponse
 from app.models import Program, User
 from app.auth import get_current_active_user, require_teacher_user
-from app.repository import ProgramRepository
+from app.repository import LessonRepository, ProgramRepository
 
 router = APIRouter(prefix="/api/courses", tags=["courses"])
 
@@ -60,3 +60,41 @@ async def delete_course(id: int, db: AsyncSession = Depends(get_db), user: User 
     course.is_active = False
     await db.commit()
     return {"message": "Course deactivated"}
+
+
+@router.post("/{id}/clear-unstarted", response_model=ClearUnstartedResult)
+async def clear_unstarted(
+    id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(require_teacher_user),
+):
+    """Delete this class's planned-but-never-started work, keeping its history.
+
+    The escape hatch for a plan that has been abandoned — a curriculum import
+    that no longer fits, a unit dropped mid-year, a week typed up and then
+    reconsidered. It removes only lessons where **no student has completed
+    anything**, so what actually happened survives in the portfolio, in the
+    UFA record and in the XP ledger. Nothing here touches the ledger at all,
+    which is the point: there is no earned XP to reverse, because nothing
+    deleted was ever earned.
+
+    Not a general delete. Wiping a class outright would take real work away,
+    and that decision should cost more than one button.
+    """
+    program = await ProgramRepository.get(db, tenant_id=user.tenant_id, program_id=id)
+    if not program:
+        raise HTTPException(status_code=404, detail="Class not found")
+
+    lessons = await LessonRepository.list_for_program(db, tenant_id=user.tenant_id, program_id=id)
+
+    deleted = 0
+    kept = 0
+    for lesson in lessons:
+        if any(a.is_completed for a in lesson.assignments):
+            kept += 1
+            continue
+        await db.delete(lesson)  # cascades to its assignments
+        deleted += 1
+
+    await db.commit()
+    return ClearUnstartedResult(lessons_deleted=deleted, completed_kept=kept)

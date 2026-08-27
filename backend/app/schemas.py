@@ -390,47 +390,48 @@ class UfaComplianceSummary(BaseModel):
     by_category: Dict[str, float]
     by_status: Dict[str, float]
 
-# --- Curriculum import (Phase 2) ---
 
-class CurriculumImportRequest(BaseModel):
-    # CSV text inside JSON, read client-side with FileReader. Deliberately not
-    # a multipart upload: the upload mount and aiofiles were removed in H-06
-    # and the importer must not quietly reopen that decision.
-    csv_text: str
+# --- Calendar days off ---
 
-class ImportRowIssue(BaseModel):
-    # `row` is the spreadsheet's own row number (header = 1), so "row 47" in
-    # the report is row 47 in Excel — the whole point of the field.
-    row: int
-    message: str
+class AffectedAssignment(BaseModel):
+    """Unfinished work sitting on a day being marked off.
 
-class ImportRowPreview(BaseModel):
-    row: int
-    program: str
-    unit: str
+    Returned so the app can *tell* the teacher what a sick day hits instead of
+    moving it for him. Nothing here reschedules anything.
+    """
+    id: int
     title: str
-    action: Literal['new', 'update', 'unchanged']
+    course_title: str
+    scheduled_date: Optional[date] = None
 
-class ImportReport(BaseModel):
-    errors: List[ImportRowIssue]
-    programs_to_create: List[str]
-    units_to_create: List[str]
-    new: int
-    updated: int
-    unchanged: int
-    total_rows: int
-    rows: List[ImportRowPreview]
+class DayOffResult(BaseModel):
+    date: date
+    day_type: str
+    label: str
+    affected: List[AffectedAssignment]
 
-class ImportCommitResult(ImportReport):
-    import_id: str
+# --- Week planner ---
 
-class CurriculumRollbackRequest(BaseModel):
-    import_id: str
-    # Completed work blocks a rollback unless the teacher forces it — and
-    # forcing reverses the XP through the ledger first, never by deletion.
-    force: bool = False
+class WeekEntryCreate(BaseModel):
+    """One typed cell of the week grid: this class, this day, this work.
 
-class RollbackResult(BaseModel):
+    The whole entry surface for hand-planning a week. Everything except the
+    class, the day and the title has a default, because a Sunday-evening
+    planning session should cost one line of typing per item — the rest is
+    editable afterwards on the card.
+    """
+    course_id: int
+    scheduled_date: date
+    title: str
+    estimated_minutes: int = 30
+    xp_reward: int = 10
+    task_type: str = 'lesson'
+    description: str = ''
+    resource_url: str = ''
+
+class WeekEntryMove(BaseModel):
+    scheduled_date: date
+
+class ClearUnstartedResult(BaseModel):
     lessons_deleted: int
-    assignments_deleted: int
-    xp_reversed: int
+    completed_kept: int

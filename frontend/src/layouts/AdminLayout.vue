@@ -20,10 +20,9 @@ function logout() {
       <nav class="sidebar-nav">
         <div class="nav-section">
           <div class="section-title">📝 Manage</div>
-          <router-link to="/admin/programs" class="nav-link" active-class="active">📚 Programs &amp; Units</router-link>
+          <router-link to="/admin/week" class="nav-link" active-class="active">🗓️ Plan the Week</router-link>
+          <router-link to="/admin/programs" class="nav-link" active-class="active">📚 Classes</router-link>
           <router-link to="/admin/tasks" class="nav-link" active-class="active">📋 Task Manager</router-link>
-          <router-link to="/admin/import" class="nav-link" active-class="active">📥 Import Curriculum</router-link>
-          <router-link to="/admin/schedule" class="nav-link" active-class="active">📅 Schedule</router-link>
           <router-link to="/admin/calendar" class="nav-link" active-class="active">📆 Calendar</router-link>
           <router-link to="/admin/projects" class="nav-link" active-class="active">🛠️ Creator Projects</router-link>
         </div>

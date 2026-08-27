@@ -166,33 +166,52 @@ class AssignmentRepository:
         return result.scalars().all()
 
     @staticmethod
-    async def for_scheduling(db: AsyncSession, tenant_id: int, unit_id: Optional[int] = None) -> Sequence[Assignment]:
-        """Open + completed assignments with their lesson, for the rolling scheduler.
+    async def for_week(
+        db: AsyncSession, tenant_id: int, start: date, end: date
+    ) -> Sequence[Assignment]:
+        """Everything sitting in one week, done or not — the planner's read.
 
-        Only units with status 'active' are paced. This is the safety valve for
-        the whole curriculum migration: a full-year import creates hundreds of
-        undated assignments across ~26 units, and adding a single sick day
-        fires reschedule_from_today across the entire tenant. Without this
-        clause that one click would date every unit at once and hand a
-        nine-year-old every subject's next lesson on the same morning.
-
-        The outer join and the is_(None) branch are both load-bearing. A lesson
-        with no unit — a quick add — has nothing to check a status against, and
-        an inner join would silently drop it from scheduling altogether.
+        Deliberately not the student-scoped completed/scheduled split that
+        `in_day_range` does for analytics: the teacher planning a week wants
+        the week as it stands, with finished work still showing on the day it
+        was planned for, so the grid he typed is the grid he sees.
         """
-        query = (
-            select(Assignment)
-            .options(_WITH_LESSON)
-            .join(Lesson, Assignment.lesson_id == Lesson.id)
-            .outerjoin(Unit, Lesson.unit_id == Unit.id)
-            .where(
-                Assignment.tenant_id == tenant_id,
-                or_(Lesson.unit_id.is_(None), Unit.status == 'active'),
+        return (
+            await db.execute(
+                select(Assignment)
+                .options(_WITH_LESSON)
+                .join(Lesson, Assignment.lesson_id == Lesson.id)
+                .join(Program, Lesson.program_id == Program.id)
+                .where(
+                    Assignment.tenant_id == tenant_id,
+                    Assignment.scheduled_date >= start,
+                    Assignment.scheduled_date <= end,
+                )
+                .order_by(Program.sort_order.asc(), Lesson.sequence_order.asc(), Assignment.id.asc())
             )
-        )
-        if unit_id is not None:
-            query = query.where(Lesson.unit_id == unit_id)
-        return (await db.execute(query)).scalars().all()
+        ).scalars().all()
+
+    @staticmethod
+    async def list_before(
+        db: AsyncSession, tenant_id: int, before: date
+    ) -> Sequence[Assignment]:
+        """Unfinished work whose day has already passed — the behind-strip.
+
+        Surfaced to the teacher rather than silently carried forward. Nothing
+        moves it but him.
+        """
+        return (
+            await db.execute(
+                select(Assignment)
+                .options(_WITH_LESSON)
+                .where(
+                    Assignment.tenant_id == tenant_id,
+                    Assignment.is_completed == False,
+                    Assignment.scheduled_date < before,
+                )
+                .order_by(Assignment.scheduled_date.asc())
+            )
+        ).scalars().all()
 
 
 class LessonRepository:
@@ -206,39 +225,22 @@ class LessonRepository:
         return result.scalars().first()
 
     @staticmethod
-    async def list_by_source_keys(
-        db: AsyncSession, tenant_id: int, source_keys: Sequence[str]
+    async def list_for_program(
+        db: AsyncSession, tenant_id: int, program_id: int
     ) -> Sequence[Lesson]:
-        """Existing lessons matching the importer's idempotency keys.
+        """Every lesson in a program, with its assignments eager-loaded.
 
-        One query for the whole file rather than one per row — a 272-row
-        import should not be 272 round trips just to learn what it already
-        knows.
+        The assignments come along because the only caller has to inspect
+        completion before deciding what it may delete, and lazy-loading inside
+        an async session raises rather than quietly working.
         """
-        if not source_keys:
-            return []
-        result = await db.execute(
-            select(Lesson).where(
-                Lesson.tenant_id == tenant_id, Lesson.source_key.in_(source_keys)
+        return (
+            await db.execute(
+                select(Lesson)
+                .options(joinedload(Lesson.assignments))
+                .where(Lesson.tenant_id == tenant_id, Lesson.program_id == program_id)
             )
-        )
-        return result.scalars().all()
-
-    @staticmethod
-    async def list_by_import_id(
-        db: AsyncSession, tenant_id: int, import_id: str
-    ) -> Sequence[Lesson]:
-        """Every lesson a single import created — the unit of rollback.
-
-        Assignments are eager-loaded because rollback must inspect completion
-        before deleting, and lazy-loading inside an async session raises.
-        """
-        result = await db.execute(
-            select(Lesson)
-            .options(joinedload(Lesson.assignments))
-            .where(Lesson.tenant_id == tenant_id, Lesson.import_id == import_id)
-        )
-        return result.scalars().unique().all()
+        ).scalars().unique().all()
 
     @staticmethod
     async def list_students(db: AsyncSession, tenant_id: int) -> Sequence[User]:

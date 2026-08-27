@@ -25,9 +25,10 @@
 | **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` (merged) | `PHASE1_BRIEF.md` ✅ |
 | **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ✅ Done 2026-08-25 | — | — |
 | **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ✅ Done 2026-08-25 | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
-| **Load** | Import the workbook subject by subject | ⚠️ Stopped after Tuttle Twins — the remaining subjects go in through Phase 3's front door instead. See *the loop, not the migration* below. | — | — |
-| **3** | **The weekly loop** — paste-to-add-a-unit, unit rhythm, the week planner, day cap + behind-strip | ⬜ Ready to start | `feat/phase-3-weekly-loop` | `PHASE3_BRIEF.md` ✅ |
-| **4** | Recurring routines (the 14 definitions), BA Level 3 as `planned`, `grade_level` on the portfolio | ⬜ | — | to write |
+| **Load** | Import the workbook subject by subject | ❌ Abandoned. One subject went in; the workflow was then removed entirely. See *one week at a time* below. |  — | — |
+| **2** | The importer | ❌ **Removed 2026-08-26**, four days after it shipped. Working code, wrong product. | — | `PHASE2_BRIEF.md` (historical) |
+| **3** | **The week planner** — type a week into a grid; nothing auto-places, nothing auto-moves | ✅ Done 2026-08-27 | `feat/weekly-planner` | `PHASE3_BRIEF.md` (superseded mid-flight — see below) |
+| **4** | Sonny's side: the day cap he sees, and whatever the friction interview turns up | ⬜ Next | — | to write |
 
 Status values: ⬜ Not started · 🟡 In progress · ✅ Done · ⚠️ Done with deviations (see below)
 
@@ -93,6 +94,60 @@ Added `paused` alongside planned/active/completed/abandoned. `abandoned` implied
 permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
+
+### 2026-08-27 — One week at a time: the importer and the scheduler both removed
+
+**The second redirect in two days, and the deeper one.** Yesterday's lesson was
+that the importer served the migration rather than the loop. Today's is that
+this household does not need the loop *automated* either:
+
+> *"I am done trying to do whole curriculum and units and all of that. I would
+> rather just input the classes and write a description of what needs to be
+> done week by week… Sonny's workload is not large so I can easily hand enter
+> the week ahead every Sunday."*
+
+He is right, and the arithmetic is the argument: four or five items a day for
+one student is about fifteen lines of typing on a Sunday. Every mechanism
+built to avoid that typing — the CSV importer, `source_key` reconciliation,
+unit staging and release, `day_of_week_hint`, the rolling scheduler itself —
+cost more attention to operate than the typing it replaced. PHASE3_BRIEF's
+paste-a-list and per-unit rhythm were the same mistake one size smaller, and
+were never built.
+
+**Removed:** `routers/curriculum.py`, `services/curriculum_import.py`, the
+import screen and store, `import.spec.js`, the unit manager and its store, the
+unit picker on the task form, `ScheduleView.vue`, `WeeklyGrid.vue`, and
+`compute_rolling_schedule` / `reschedule_from_today` — with the module renamed
+`school_days.py` for what honestly remains of it.
+
+**Added:** `/api/week` and `WeekPlannerView.vue` — classes down the side, days
+across the top, click a cell and type. Plus `POST /courses/{id}/clear-unstarted`
+as the escape hatch for an abandoned plan, which keeps anything completed.
+
+**The decision that matters most:** *nothing moves work any more.* Adding a
+sick day used to fire a full-tenant reschedule; it now reports what falls on
+that day and leaves it alone. Every entry the planner creates is
+`date_locked`. A date the teacher typed is a decision, and an app that quietly
+revises it is an app he cannot plan in. There is deliberately no
+`/schedule/recalculate` left, and `scheduling.spec.js` asserts its absence so
+reintroducing one has to be a conscious act.
+
+**Kept deliberately, though now unused:** `Unit`, `Lesson.source_key`,
+`Lesson.import_id` and the unit-status column. Ripping them out means a
+migration against live data holding Sonny's completion history, for no
+behaviour he would ever notice. Dead columns are cheap; a bad migration is
+not. They are invisible in the UI, which is what he actually asked for.
+
+**Process note, recorded rather than hidden:** the repo's rule is
+brief-then-build. This change went straight to build. The four questions he
+answered were a tighter specification than a brief would have produced, and he
+had twice said the ceremony was the problem. Writing a document to describe
+deleting documents' worth of machinery would have been the joke telling
+itself. The rule stands for the next phase.
+
+**The lesson, third time stated and hopefully last:** *ask what the household
+actually does before building the thing that would help if it did something
+else.* Volume justifies machinery. Fifteen items a week does not.
 
 ### 2026-08-26 — The loop, not the migration: Phase 3 redefined, the Load stopped
 
