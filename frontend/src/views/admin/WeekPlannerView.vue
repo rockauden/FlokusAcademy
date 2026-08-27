@@ -138,6 +138,9 @@ function entriesFor(courseId, date) {
 
 async function load(start = null) {
   error.value = ''
+  // Notices are about the week on screen. Carrying "8 items still sit on Thu"
+  // into a different week is worse than saying nothing.
+  notice.value = ''
   try {
     await Promise.all([
       weekStore.fetchWeek(start),
@@ -627,12 +630,19 @@ thead th { position: relative; }
 .day-head {
   background: none;
   border: none;
-  padding: 0;
+  padding: 2px 4px;
+  margin: -2px -4px;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
-  display: block;
+  /* Column, not block: the name and the day's tally are separate lines. As
+     inline spans inside the button they ran together — "Thu 8/278 - 240m" —
+     which is what block-level divs were quietly doing before this became a
+     control. */
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   width: 100%;
   border-radius: 4px;
 }
