@@ -1,3 +1,18 @@
+> ## ⚠️ Superseded mid-flight — only part of it was built
+>
+> **Written 26 August 2026, obsolete within a day.** It specified paste-a-list
+> curriculum entry and per-unit pacing rhythms alongside the week planner. The
+> owner then asked for units and importing to go entirely, so items 1 and 2 were
+> never built — they were the same mistake one size smaller.
+>
+> Item 3, the week planner, was built and is the app's main screen. The reasoning
+> in it about the weekly loop, pinned dates and surfacing the backlog to an adult
+> all still holds.
+>
+> **What is true now:** `docs/BUILD_LOG.md`.
+
+---
+
 # Phase 3 Implementation Brief — The Weekly Loop
 
 **For:** Claude Code, working in the `flokus-academy` repo

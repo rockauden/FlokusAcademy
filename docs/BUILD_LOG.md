@@ -1,10 +1,12 @@
 # Flokus Academy — Build Log
 
-**This file is the running state of the curriculum rebuild.** Every Claude Code session reads it first and updates it last. It is the only thing that survives between sessions — a session's own todo list does not.
+**This file is the running state of the project, and the only document kept current.** Every session reads it first and updates it last. It is the only thing that survives between sessions — a session's own todo list does not.
 
-- **Plan:** `docs/Flokus_Academy_Curriculum_Review.md` (defects are numbered B1–B10; build order is §9)
 - **Project context:** `.agents/skills/lms-architecture/SKILL.md` — load before any change
-- **Curriculum to load:** `research_and_development/Flokus_Curriculum_v1_Migrated.xlsx` — 272 lessons, 30 units, 14 routines
+- **What shipped, dated:** `CHANGELOG.md`
+- Everything else in `docs/` is superseded and stamped as such at the top. The
+  curriculum review and the phase briefs describe an architecture that was built
+  and then removed; they are history, not instructions.
 
 ---
 
@@ -14,23 +16,42 @@
 
 **At the end of a session:** update the phase table, and append to *Decisions changed in flight* anything you did differently from the plan and why. A deviation is fine; a silent deviation is not — the next session will read the plan and assume it still holds.
 
-**When a phase completes:** write the next phase's brief into `docs/PHASE<N>_BRIEF.md` using the review doc §5–§9 as the source, and the Phase 1 brief as the format. Then stop and let it be reviewed before building. Writing the brief is a separate act from executing it, deliberately — the shape of each phase depends on what the last one turned up.
+**Before building something substantial:** write down what it is and why, and let it be reviewed before the code exists. That rule caught two of the three redirects in this project cheaply, on paper. It was deliberately skipped once — 2026-08-27, when four answered questions were a tighter specification than a brief would have been — and the skip is recorded rather than hidden.
+
+**Before designing anything at all:** ask what this household actually does, not what would help if it did ten times more. Three redirects came from getting that backwards.
 
 ---
 
-## Phase table
+## Where things stand
 
-| Phase | What | Status | Branch | Brief |
-|---|---|---|---|---|
-| **1** | Unblock authoring — Program/Unit UI, unit picker, TaskUpdate fix, dependency_mode, calendar model, scheduler unit-status guard | ✅ Done | `feat/phase-1-curriculum-authoring` (merged) | `PHASE1_BRIEF.md` ✅ |
-| **Pilot** | Hand-enter Tuttle Twins Vol 1 through the new UI; verify unit gating survives a sick day | ✅ Done 2026-08-25 | — | — |
-| **2** | The importer — canonical CSV schema, `source_key`, validate/commit, preview screen | ✅ Done 2026-08-25 | `feat/phase-2-curriculum-import` | `PHASE2_BRIEF.md` ✅ |
-| **Load** | Import the workbook subject by subject | ❌ Abandoned. One subject went in; the workflow was then removed entirely. See *one week at a time* below. |  — | — |
-| **2** | The importer | ❌ **Removed 2026-08-26**, four days after it shipped. Working code, wrong product. | — | `PHASE2_BRIEF.md` (historical) |
-| **3** | **The week planner** — type a week into a grid; nothing auto-places, nothing auto-moves | ✅ Done 2026-08-27 | `feat/weekly-planner` | `PHASE3_BRIEF.md` (superseded mid-flight — see below) |
-| **4** | Sonny's side: the day cap he sees, and whatever the friction interview turns up | ⬜ Next | — | to write |
+| | |
+|---|---|
+| **The app** | One planning screen. The teacher types a week by hand; nothing is imported, scheduled or moved. |
+| **V2 in production** | Deployed on `main`, migration head `e5a2b8d17c40`. In real use for planning; has not run a school day. |
+| **V1** | Still running the 2026–27 year. Cutover is now a live question — the workflow objection is gone. |
+| **Tests** | 61 Playwright e2e, green. |
+| **Branch** | `main`, with `school-year-2026-27` kept in step. |
 
-Status values: ⬜ Not started · 🟡 In progress · ✅ Done · ⚠️ Done with deviations (see below)
+**The phased build plan that used to live here is finished, and most of what it
+built is gone.** Phases 1–3 designed and delivered curriculum authoring, a CSV
+importer and a release model; the importer and the scheduler were removed on
+26–27 August. The record of each phase is in `docs/PHASE*_BRIEF.md`, each stamped
+with what survived. What replaced the plan is the entry *one week at a time*
+below.
+
+### Owed next
+
+- **A fresh analysis and roadmap**, to be written in a new session. This document
+  and `.agents/skills/lms-architecture/SKILL.md` are its inputs.
+- **Sonny's side.** His day view still has no ceiling (`daily_task_cap` exists in
+  config and has no reader). The friction conversation with him is still owed —
+  three concrete things that are confusing or dull, in his words.
+- **UFA / compliance.** What the Portfolio actually needs before the first report.
+  `grade_level` was specified and never wired up.
+- **Dead weight inventory.** `Unit`/`modules`, `Lesson.source_key`/`import_id`,
+  `day_of_week_hint`, `priority`, `school_day_offset`, `sequence_order`,
+  `resource_path`, `curriculum_seeder`. All deliberately kept; worth a decision
+  rather than drift.
 
 ---
 

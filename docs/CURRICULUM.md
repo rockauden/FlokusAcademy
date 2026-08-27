@@ -1,3 +1,12 @@
+> ## ⚠️ Superseded — describes an earlier V1 year
+>
+> The 677-assignment plan from before the August 2026 rebuild. Kept because it is
+> the only prose record of that state.
+>
+> **The current V1 year:** `docs/SCHEDULE_2026-27.md`.
+
+---
+
 # Flokus Academy — What Sonny Is Actually Doing This Year
 
 **Grade 5 · 2026–27 · Mon 17 Aug 2026 →**

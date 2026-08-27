@@ -1,3 +1,13 @@
+> ## ⚠️ Stale — describes a version of V2 that no longer exists
+>
+> **Written 19 August 2026** for flokus.org. The V2 section describes curriculum
+> import, units and automatic scheduling — all removed on 26–27 August 2026. V2
+> is now a hand-planned weekly planner.
+>
+> Rewrite before publishing. The V1 section and the overall voice still stand.
+
+---
+
 # Flokus Academy — site copy
 
 Copy only. Hand to the flokus.org agent for integration. Written to match the

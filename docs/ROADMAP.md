@@ -1,3 +1,18 @@
+> ## ⚠️ Superseded — history, not instructions
+>
+> **Written 24 August 2026.** Steps 0–2 were executed exactly as described:
+> branches consolidated, Phase 1 deployed, the pilot run. Step 3 (the importer)
+> was built and then removed. Steps 4–7 were overtaken when the workflow changed
+> on 26–27 August.
+>
+> Kept for the branch-consolidation record and the state-of-the-app survey, both
+> of which are accurate as of the day it was written.
+>
+> **What is true now:** `docs/BUILD_LOG.md`. A new analysis and roadmap are being
+> written separately.
+
+---
+
 # Flokus Academy — Consolidation Roadmap
 
 **Written:** 24 August 2026, week 2 of the school year

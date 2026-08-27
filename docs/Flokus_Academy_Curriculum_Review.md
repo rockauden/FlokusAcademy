@@ -1,3 +1,24 @@
+> ## ⚠️ Superseded — history, not instructions
+>
+> **Written 17 August 2026. Its recommendations were built, and then removed.**
+>
+> This review designed a curriculum-ingest architecture: units, staged-and-released
+> work, a CSV importer with `source_key` idempotency, and a rolling scheduler.
+> All of it shipped between 17 and 25 August, and all of it was removed on 26–27
+> August, because the household it was built for does not have the problem it
+> solves — one student doing four or five things a day is fifteen lines of typing
+> on a Sunday.
+>
+> Kept because it is the clearest account of *why* the domain model is shaped the
+> way it is, and several decisions in it are still load-bearing: the
+> template/instance split, the append-only XP ledger, tenant-scoped repositories,
+> and the analysis of the v1 data in §7.
+>
+> **What is true now:** `docs/BUILD_LOG.md` and
+> `.agents/skills/lms-architecture/SKILL.md`.
+
+---
+
 # Flokus Academy — Curriculum Ingest Review & Import Spec
 
 **Reviewed:** backend `app/` (models, schemas, routers, repository, services), frontend `src/` (admin + student), legacy `flokus.db` and `archive_v1/`

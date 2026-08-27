@@ -1,3 +1,17 @@
+> ## ⚠️ Delivered 17 August 2026 — mostly since removed
+>
+> Programs and units in the admin UI, the unit picker, the calendar model, and
+> the scheduler's unit-status guard. What survives: the `TaskUpdate` partial-update
+> fix, one `dependency_mode` vocabulary, and `Assignment.date_locked` — which is
+> now set on everything the week planner creates.
+>
+> What is gone: the unit manager, the unit picker, unit status as a release
+> mechanism, and the rolling scheduler this brief was guarding.
+>
+> **What is true now:** `docs/BUILD_LOG.md`.
+
+---
+
 # Phase 1 Implementation Brief — Unblock Curriculum Authoring
 
 **For:** Claude Code, working in the `Flokus_Academy` repo

@@ -1,3 +1,19 @@
+> ## ⚠️ Delivered 25 August 2026 — removed 27 August 2026
+>
+> The CSV curriculum importer. It worked: 72 Tuttle Twins lessons went into
+> production through it, cleanly. It was removed two days later because it had
+> been designed for a *migration* — getting 272 legacy lessons out of V1 in one
+> pass — and was handed over as the everyday workflow, which it is far too heavy
+> for.
+>
+> Kept as the record of that lesson, which is the most expensive one this project
+> has learned: **a workflow that is correct for loading a year is not
+> automatically correct for running one.**
+>
+> **What is true now:** `docs/BUILD_LOG.md`.
+
+---
+
 # Phase 2 Implementation Brief — The Importer
 
 **For:** Claude Code, working in the `flokus-academy` repo
