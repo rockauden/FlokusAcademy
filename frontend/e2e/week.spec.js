@@ -172,6 +172,56 @@ test.describe('planning a week by hand', () => {
     expect(hidden.is_active).toBe(false)
   })
 
+  test('a class can be renamed in place, without rewriting its subject', async ({ page }) => {
+    // Seeded classes carry a real subject_area — "Tuttle Twins" is Social
+    // Studies — and analytics group by it. Renaming the class the teacher sees
+    // must not overwrite the subject underneath. A class added here, where
+    // both were derived from the one name a household has for it, should
+    // follow the rename instead.
+    await login(page, 'teacher')
+    const stamp = Date.now()
+
+    const seeded = await apiCall(page, 'post', '/courses/', {
+      title: `Seeded style ${stamp}`,
+      subject_area: 'Social Studies',
+      platform: 'Tuttle Twins',
+    })
+    const derivedName = `Derived style ${stamp}`
+    const derived = await apiCall(page, 'post', '/courses/', {
+      title: derivedName,
+      subject_area: derivedName,
+      platform: derivedName,
+    })
+
+    await page.goto('/admin/week')
+
+    for (const [klass, renamed] of [
+      [seeded, `American History ${stamp}`],
+      [derived, `Latin ${stamp}`],
+    ]) {
+      await page.locator('tbody tr', { hasText: klass.title }).getByTestId('rename-class').click()
+
+      // Located on the page, not within the row: opening the editor replaces
+      // the class name with an input, so a row filtered by that text stops
+      // matching itself the moment the click lands. Only one rename is open at
+      // a time, which is what makes the page-level locator unambiguous.
+      const input = page.locator('.class-input.rename')
+      await input.fill(renamed)
+      await input.press('Enter')
+      await expect(page.locator('tbody tr', { hasText: renamed })).toBeVisible()
+    }
+
+    const after = await apiCall(page, 'get', '/courses/?include_inactive=true')
+    const renamedSeeded = after.find(c => c.id === seeded.id)
+    expect(renamedSeeded.title).toBe(`American History ${stamp}`)
+    expect(renamedSeeded.subject_area).toBe('Social Studies')  // untouched
+    expect(renamedSeeded.platform).toBe('Tuttle Twins')
+
+    const renamedDerived = after.find(c => c.id === derived.id)
+    expect(renamedDerived.title).toBe(`Latin ${stamp}`)
+    expect(renamedDerived.subject_area).toBe(`Latin ${stamp}`)  // followed
+  })
+
   test('a card opens an editor, and saving keeps what it does not show', async ({ page }) => {
     // The task form is gone; this is where minutes, links and teacher-led live
     // now. The editor sends a partial update, so anything outside it - the

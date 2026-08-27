@@ -110,6 +110,40 @@ async function addClass() {
   }
 }
 
+const editingClass = ref(null)
+const classDraft = ref({ emoji: '', title: '' })
+
+function startRenameClass(klass) {
+  editingClass.value = klass.id
+  classDraft.value = { emoji: klass.emoji, title: klass.title }
+}
+
+async function saveClassName(klass) {
+  const title = classDraft.value.title.trim()
+  editingClass.value = null
+  if (!title || (title === klass.title && classDraft.value.emoji === klass.emoji)) return
+  error.value = ''
+  try {
+    // subject_area and platform follow the title *only* when they were derived
+    // from it — which is what happens for a class added here, where one name is
+    // all a household has for it. The seeded classes are different: "Tuttle
+    // Twins" has subject_area "Social Studies", and renaming the class to
+    // "American History" should not overwrite the subject the analytics group
+    // by. Matching on the old title is what tells the two cases apart.
+    const derived = field => (klass[field] === klass.title ? title : klass[field])
+    await coursesStore.updateCourse(klass.id, {
+      ...klass,
+      title,
+      emoji: classDraft.value.emoji || klass.emoji,
+      subject_area: derived('subject_area'),
+      platform: derived('platform'),
+    })
+    await coursesStore.fetchCourses({ includeInactive: true })
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 async function hideClass(klass) {
   error.value = ''
   try {
@@ -376,15 +410,40 @@ onMounted(() => load())
         <tbody>
           <tr v-for="klass in classes" :key="klass.id">
             <th class="class-col">
-              <span class="class-name">
-                <span class="emoji">{{ klass.emoji }}</span> {{ klass.title }}
-              </span>
-              <button
-                class="row-btn"
-                :title="`Hide ${klass.title}`"
-                :aria-label="`Hide ${klass.title}`"
-                @click="hideClass(klass)"
-              >−</button>
+              <template v-if="editingClass === klass.id">
+                <input
+                  class="emoji-input"
+                  v-model="classDraft.emoji"
+                  maxlength="2"
+                  aria-label="Emoji"
+                  @keyup.enter="saveClassName(klass)"
+                />
+                <input
+                  class="class-input rename"
+                  v-model="classDraft.title"
+                  autofocus
+                  aria-label="Class name"
+                  @keyup.enter="saveClassName(klass)"
+                  @keyup.escape="editingClass = null"
+                  @blur="saveClassName(klass)"
+                />
+              </template>
+              <template v-else>
+                <button
+                  class="class-name"
+                  data-testid="rename-class"
+                  :title="`Rename ${klass.title}`"
+                  @click="startRenameClass(klass)"
+                >
+                  <span class="emoji">{{ klass.emoji }}</span> {{ klass.title }}
+                </button>
+                <button
+                  class="row-btn"
+                  :title="`Hide ${klass.title}`"
+                  :aria-label="`Hide ${klass.title}`"
+                  @click="hideClass(klass)"
+                >−</button>
+              </template>
             </th>
             <td
               v-for="day in days"
@@ -668,7 +727,24 @@ thead th { position: relative; }
 .day-label-input { width: 100%; font-size: 0.8125rem; padding: 3px 6px; }
 
 tbody th.class-col { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.class-name { overflow-wrap: anywhere; }
+/* A button that reads as the label it edits: the affordance is the hover, not
+   a permanent control, because this row is read far more often than renamed. */
+.class-name {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  margin: -2px -4px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  overflow-wrap: anywhere;
+  flex: 1;
+  min-width: 0;
+}
+.class-name:hover, .class-name:focus-visible { background: rgba(255,255,255,0.08); }
+.class-input.rename { width: auto; flex: 1; min-width: 0; }
 .row-btn {
   background: none;
   border: none;
