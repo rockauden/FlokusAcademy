@@ -32,6 +32,9 @@ export const useScheduleStore = defineStore('schedule', () => {
     return await api.post(`/schedule/holiday?${query}`)
   }
 
+  // Days off no longer drive anything — nothing reschedules — so they are a
+  // marker on the planner rather than a mechanism. Still worth having: seeing
+  // "we are away Thursday" while planning the week is the whole point.
   async function removeNonSchoolDay(id) {
     // This is a school_calendar entry, not a school_event. Deleting via
     // /events/{id} silently destroyed an unrelated calendar event instead.

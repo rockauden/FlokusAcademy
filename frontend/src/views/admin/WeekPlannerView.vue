@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useWeekStore } from '../../stores/week'
 import { useCoursesStore } from '../../stores/courses'
+import { useScheduleStore } from '../../stores/schedule'
 
 /**
  * The Sunday screen: classes down the side, days across the top, type in a
@@ -16,6 +17,7 @@ import { useCoursesStore } from '../../stores/courses'
  */
 const weekStore = useWeekStore()
 const coursesStore = useCoursesStore()
+const scheduleStore = useScheduleStore()
 
 const error = ref('')
 const notice = ref('')
@@ -177,6 +179,56 @@ async function commitDraft(courseId, date, { keepOpen = true } = {}) {
   }
 }
 
+/**
+ * Days off, marked from the day they belong to.
+ *
+ * They used to live on the schedule screen, which was deleted with the
+ * scheduler — and the calendar screen is a different thing entirely (school
+ * events, a separate table), so for a while there was no way to mark or clear
+ * one at all. Here is where the teacher actually learns about a day off:
+ * looking at the week.
+ *
+ * Since nothing reschedules any more, a day off is a marker rather than a
+ * mechanism. It greys the column and says why, and the work sitting on it
+ * stays exactly where it is for the teacher to move or leave.
+ */
+const dayMenu = ref(null)
+const dayLabel = ref('')
+
+function openDayMenu(day) {
+  dayMenu.value = dayMenu.value === day.date ? null : day.date
+  dayLabel.value = ''
+}
+
+async function markDayOff(day, kind) {
+  error.value = ''
+  try {
+    const label = dayLabel.value.trim()
+    const result = kind === 'sick'
+      ? await scheduleStore.addSickDay(day.date)
+      : await scheduleStore.addHoliday(day.date, label || 'Day off')
+    await load(weekStore.week.week_start)
+    notice.value = result.affected && result.affected.length
+      ? `${result.affected.length} item(s) still sit on ${day.name}. Move them if you want them elsewhere.`
+      : ''
+  } catch (e) {
+    error.value = e.message
+  }
+  dayMenu.value = null
+}
+
+async function clearDayOff(day) {
+  error.value = ''
+  try {
+    await scheduleStore.removeNonSchoolDay(day.off.id)
+    await load(weekStore.week.week_start)
+    notice.value = ''
+  } catch (e) {
+    error.value = e.message
+  }
+  dayMenu.value = null
+}
+
 // The details behind a card. This is what the task manager used to be for;
 // folding it in here is what let that page go. Only the fields a week's
 // planning actually touches — the rest keep their defaults.
@@ -284,13 +336,36 @@ onMounted(() => load())
               :key="day.date"
               :class="{ 'is-off': day.off, 'is-over': day.overloaded }"
             >
-              <div class="day-name">{{ day.name }} <span class="day-date">{{ day.label }}</span></div>
-              <div class="day-meta">
-                <template v-if="day.off">{{ day.off.label }}</template>
-                <template v-else-if="day.entries.length">
-                  {{ day.entries.length }} · {{ day.minutes }}m
+              <button class="day-head" @click="openDayMenu(day)" :aria-expanded="dayMenu === day.date">
+                <span class="day-name">{{ day.name }} <span class="day-date">{{ day.label }}</span></span>
+                <span class="day-meta">
+                  <template v-if="day.off">{{ day.off.label }}</template>
+                  <template v-else-if="day.entries.length">
+                    {{ day.entries.length }} · {{ day.minutes }}m
+                  </template>
+                  <template v-else>—</template>
+                </span>
+              </button>
+
+              <div v-if="dayMenu === day.date" class="day-menu" @click.stop>
+                <template v-if="day.off">
+                  <p class="day-menu-note">{{ day.name }} is marked “{{ day.off.label }}”.</p>
+                  <button class="link-btn" data-testid="clear-day-off" @click="clearDayOff(day)">
+                    Back to a school day
+                  </button>
                 </template>
-                <template v-else>—</template>
+                <template v-else>
+                  <input
+                    v-model="dayLabel"
+                    class="day-label-input"
+                    placeholder="Reason (optional)"
+                    @keyup.enter="markDayOff(day, 'off')"
+                  />
+                  <div class="day-menu-actions">
+                    <button class="link-btn" data-testid="mark-day-off" @click="markDayOff(day, 'off')">Day off</button>
+                    <button class="link-btn" @click="markDayOff(day, 'sick')">Sick day</button>
+                  </div>
+                </template>
               </div>
             </th>
           </tr>
@@ -436,8 +511,8 @@ onMounted(() => load())
     </div>
 
     <p class="text-muted footnote" v-if="weekStore.week">
-      Days off are set on the Calendar screen. Marking one tells you what falls on it — it never
-      moves the work for you.
+      Click a day's heading to mark it off, or to make it a school day again. Marking one tells you
+      what already sits on it — it never moves the work for you.
     </p>
   </div>
 </template>
@@ -547,6 +622,40 @@ tbody th.class-col { text-align: left; font-weight: 500; }
 }
 .link-btn.danger { color: var(--color-danger, #e05252); }
 .footnote { margin-top: var(--space-md); font-size: 0.8125rem; }
+
+thead th { position: relative; }
+.day-head {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: block;
+  width: 100%;
+  border-radius: 4px;
+}
+.day-head:hover { background: rgba(255,255,255,0.06); }
+.day-menu {
+  position: absolute;
+  z-index: 7;
+  top: calc(100% - 4px);
+  left: 4px;
+  min-width: 190px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default, rgba(255,255,255,0.16));
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  font-weight: 400;
+}
+.day-menu-note { margin: 0; font-size: 0.75rem; color: var(--text-secondary); }
+.day-menu-actions { display: flex; gap: var(--space-md); }
+.day-label-input { width: 100%; font-size: 0.8125rem; padding: 3px 6px; }
 
 tbody th.class-col { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .class-name { overflow-wrap: anywhere; }

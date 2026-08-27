@@ -96,6 +96,30 @@ time. All figures below are from `flokus.db.original-677-backup`.
 In development. Has never run a school day. V1 keeps running until V2 can take one over without
 anyone noticing the change.
 
+### 2026-08-27 (later still) — Days off, from the day itself
+
+#### Added
+
+- **Mark a day off from the planner**: click a day's heading to mark it off
+  with an optional reason, or to turn it back into a school day. This had no
+  home at all after the schedule screen was removed — the Calendar screen
+  manages school events, a different thing — so a leftover sick day could not
+  be cleared.
+
+#### Fixed
+
+- The planner's footnote claimed days off were set on the Calendar screen.
+  They never were.
+
+#### Notes
+
+- A day off is now a marker, not a mechanism: it labels the column, and the
+  work on that day stays put. Marking one tells you what is already there.
+- **Start over** deliberately keeps the school calendar — days off are usually
+  real facts about the year, and clearing student work should not erase them.
+
+60 e2e tests pass.
+
 ### 2026-08-27 (later) — One screen to plan from
 
 #### Added

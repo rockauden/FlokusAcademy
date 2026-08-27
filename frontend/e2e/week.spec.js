@@ -205,6 +205,54 @@ test.describe('planning a week by hand', () => {
     expect(after.xp_reward).toBe(10)
   })
 
+  test('a day can be marked off and made a school day again, from the day itself', async ({ page }) => {
+    // Days off lived on the schedule screen, which went with the scheduler —
+    // and the calendar screen is a different table (school events), so for a
+    // while there was no way to mark or clear one at all. They belong here:
+    // the week is where a teacher learns he is away on Thursday.
+    await login(page, 'teacher')
+    const week = await apiCall(page, 'get', '/week/')
+
+    await page.goto('/admin/week')
+    const header = page.locator('thead th').nth(2)  // Wednesday
+    await header.locator('.day-head').click()
+    await page.locator('.day-label-input').fill('Dentist')
+    await page.getByTestId('mark-day-off').click()
+
+    await expect(header).toContainText('Dentist')
+
+    // …and back again, which is the half that had no route at all before.
+    await header.locator('.day-head').click()
+    await page.getByTestId('clear-day-off').click()
+    await expect(header).not.toContainText('Dentist')
+
+    const after = await apiCall(page, 'get', `/week/?start=${week.week_start}`)
+    expect(after.days_off.find(d => d.label === 'Dentist')).toBeUndefined()
+  })
+
+  test('marking a day off leaves the work sitting on it', async ({ page }) => {
+    // The rule the whole app now turns on. A day off is a marker, not a
+    // mechanism: it says something about the day, and decides nothing about
+    // the work the teacher put there.
+    await login(page, 'teacher')
+    const stamp = Date.now()
+    const week = await apiCall(page, 'get', '/week/')
+    const thursday = new Date(...week.week_start.split('-').map((n, i) => (i === 1 ? Number(n) - 1 : Number(n))))
+    thursday.setDate(thursday.getDate() + 3)
+    const thursdayISO = isoDate(thursday)
+
+    const entry = await apiCall(page, 'post', '/week/entries', {
+      course_id: 1,
+      scheduled_date: thursdayISO,
+      title: `Stays put ${stamp}`,
+    })
+
+    const result = await apiCall(page, 'post', `/schedule/holiday?date_val=${thursdayISO}&label=Away`)
+    expect(result.affected.map(a => a.id)).toContain(entry.id)
+
+    expect((await apiCall(page, 'get', `/tasks/${entry.id}`)).scheduled_date).toBe(thursdayISO)
+  })
+
   test('unfinished work from before today is surfaced, not carried forward', async ({ page }) => {
     // The teacher's half of the day cap: the backlog is a decision an adult
     // makes, not something that silently accumulates on a nine-year-old's

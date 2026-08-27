@@ -138,8 +138,11 @@ async def get_week(
         "week_end": week_end,
         "school_weekdays": sorted(parse_school_days(config.get('school_days'))),
         "daily_task_cap": cap,
+        # id travels with the day so the planner can clear one it is showing,
+        # without a second round trip to find out which row it is.
         "days_off": [
-            {"date": d.calendar_date, "day_type": d.day_type, "label": d.label} for d in days_off
+            {"id": d.id, "date": d.calendar_date, "day_type": d.day_type, "label": d.label}
+            for d in days_off
         ],
         "entries": [_merge(a) for a in assignments],
         "behind": [_merge(a) for a in behind],

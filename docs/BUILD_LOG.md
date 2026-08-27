@@ -95,6 +95,35 @@ permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
 
+### 2026-08-27 (later still) — Days off had nowhere left to live
+
+Found by the owner within minutes of using the reset: a sick day from the
+pilot survived it and could not be removed.
+
+Two separate things, and only one was a bug.
+
+**Not a bug:** the reset keeps `school_calendar` on purpose. Days off are
+ordinarily real facts about the year — Thanksgiving, a trip — and a button
+that clears student work should not also erase the calendar. That is what the
+option said it would do, and it did it.
+
+**The bug, and it was mine:** deleting `ScheduleView.vue` with the scheduler
+took away the only place days off could be added or cleared, and the planner's
+own footnote pointed at the Calendar screen — which manages `school_events`, a
+different table entirely. So the UI described a route that had never existed.
+A leftover pilot sick day was simply unreachable.
+
+Fixed by putting days off where they are actually learned about: **click a
+day's heading in the planner** to mark it off, with an optional reason, or to
+make it a school day again. `/api/week` now returns each day-off's `id` so the
+planner can clear one it is already showing.
+
+Worth stating plainly, since it changes what the feature *is*: with the
+scheduler gone, **a day off is a marker, not a mechanism.** It greys the
+column and says why. Work sitting on that day stays exactly where it is, and
+marking the day reports what is there rather than moving it — covered by
+*marking a day off leaves the work sitting on it*.
+
 ### 2026-08-27 (later) — One screen: the class manager and task manager removed
 
 Same day, same direction, one step further. Having planned in the grid, the
