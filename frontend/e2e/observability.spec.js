@@ -52,7 +52,7 @@ test.describe('errors are visible, not silent', () => {
 
   test('an unhandled rejection surfaces as a visible toast', async ({ page }) => {
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     // Exactly the shape of failure that went unnoticed all week: a fire and
     // forget API call from a handler, rejecting with nobody awaiting it.
@@ -68,7 +68,7 @@ test.describe('errors are visible, not silent', () => {
 
   test('a toast can be dismissed', async ({ page }) => {
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     await page.evaluate(async () => {
       const { useErrorsStore } = await import('/src/stores/errors.js')
@@ -88,7 +88,7 @@ test.describe('errors are visible, not silent', () => {
     // a child's onMounted as a render failure and replaced the whole screen,
     // which turns a network blip into "the app is broken".
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     await page.evaluate(async () => {
       const { api } = await import('/src/api/client.js')
@@ -113,7 +113,7 @@ test.describe('errors are visible, not silent', () => {
     // entirely ordinary redirect to the login page. Caught as a flake first --
     // it only surfaced when the expiry happened to land during a render.
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     await page.evaluate(async () => {
       const { api } = await import('/src/api/client.js')
@@ -130,7 +130,7 @@ test.describe('errors are visible, not silent', () => {
 
   test('repeated identical failures collapse instead of stacking', async ({ page }) => {
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     const count = await page.evaluate(async () => {
       const { useErrorsStore } = await import('/src/stores/errors.js')

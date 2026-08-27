@@ -95,6 +95,37 @@ permanence and there was no way to say "stopped for now, may resume". Review doc
 §5.8 and the skill both updated.
 -->
 
+### 2026-08-27 (later) — One screen: the class manager and task manager removed
+
+Same day, same direction, one step further. Having planned in the grid, the
+owner asked for the other two Manage pages to go: *"we no longer need these
+pages, Classes and Task Manager."*
+
+Both were right to remove, for the same reason: each existed to hold something
+the planner can hold better in place.
+
+- **Classes** became a `+ Add a class` row at the foot of the grid and a `-`
+  on each class row. Hiding deactivates rather than deletes — a class the
+  household stopped teaching still owns completed work the UFA record needs —
+  and hidden classes stay one click from returning, since there is no longer a
+  screen to go back to.
+- **Task Manager** was three tabs: a quick-add form the grid replaced, a flat
+  task list the grid replaced, and the legacy JSON bulk import that should have
+  gone with the CSV importer. What it held that the grid did not was *editing*:
+  minutes, XP, type, teacher-led, a link, notes. That is now the card editor —
+  click any card in the grid. `TaskForm.vue` went with the page.
+
+**The reset.** `POST /api/maintenance/reset-curriculum` deletes every lesson,
+assignment, unit, XP entry and purchase in the tenant, keeping classes,
+accounts, calendar, expenses and reward definitions. It exists because the
+alternative was talking a first-time developer through Railway's CLI and psql
+to run DELETEs against production by hand, which is the larger risk. Guarded by
+a phrase typed in full and re-checked server-side; `reset.spec.js` asserts that
+an almost-match ("delete all work") is as inert as nonsense.
+
+Admin is now five screens: Plan the Week, Calendar, Creator Projects,
+Portfolio, Analytics, UFA Finances, Settings — with Plan the Week the home.
+
 ### 2026-08-27 — One week at a time: the importer and the scheduler both removed
 
 **The second redirect in two days, and the deeper one.** Yesterday's lesson was

@@ -35,6 +35,13 @@ export const useWeekStore = defineStore('week', () => {
     }
   }
 
+  // Edits go through /tasks/{id}, which the API already types as a partial
+  // update — fields not sent keep their values. The planner sends only what
+  // its editor shows, so it cannot reset anything it does not display.
+  async function updateEntry(id, fields) {
+    return await api.put(`/tasks/${id}`, fields)
+  }
+
   async function moveEntry(id, scheduledDate) {
     return await api.put(`/week/entries/${id}/move`, { scheduled_date: scheduledDate })
   }
@@ -43,5 +50,5 @@ export const useWeekStore = defineStore('week', () => {
     return await api.delete(`/week/entries/${id}`)
   }
 
-  return { week, loading, saving, fetchWeek, addEntry, moveEntry, removeEntry }
+  return { week, loading, saving, fetchWeek, addEntry, updateEntry, moveEntry, removeEntry }
 })

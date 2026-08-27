@@ -146,6 +146,65 @@ test.describe('planning a week by hand', () => {
     expect(after).toBe(before - 25)
   })
 
+  test('a class can be added and hidden from the planner itself', async ({ page }) => {
+    // The class manager and the task manager were both removed; whatever they
+    // did that still matters has to be reachable from this one screen or it is
+    // gone. Adding and retiring a class is the whole of what remained.
+    await login(page, 'teacher')
+    const name = `Latin ${Date.now()}`
+
+    await page.goto('/admin/week')
+    await page.getByTestId('add-class').click()
+    await page.locator('.class-input').fill(name)
+    await page.locator('.class-input').press('Enter')
+
+    const row = page.locator('tbody tr', { hasText: name })
+    await expect(row).toBeVisible()
+
+    // Hiding is deactivation, not deletion: finished work under a class the
+    // household stopped teaching still has to count toward the UFA record.
+    await row.locator('.row-btn').click()
+    await expect(page.locator('tbody tr', { hasText: name })).toHaveCount(0)
+
+    const all = await apiCall(page, 'get', '/courses/?include_inactive=true')
+    const hidden = all.find(c => c.title === name)
+    expect(hidden).toBeTruthy()
+    expect(hidden.is_active).toBe(false)
+  })
+
+  test('a card opens an editor, and saving keeps what it does not show', async ({ page }) => {
+    // The task form is gone; this is where minutes, links and teacher-led live
+    // now. The editor sends a partial update, so anything outside it - the
+    // date, the pin, the XP - has to survive untouched.
+    await login(page, 'teacher')
+    const stamp = Date.now()
+    const week = await apiCall(page, 'get', '/week/')
+
+    const created = await apiCall(page, 'post', '/week/entries', {
+      course_id: 1,
+      scheduled_date: week.week_start,
+      title: `Editable ${stamp}`,
+    })
+
+    await page.goto('/admin/week')
+    await page.locator('.entry', { hasText: `Editable ${stamp}` }).click()
+
+    const editor = page.locator('.entry-editor')
+    await editor.locator('.edit-row input').first().fill('45')
+    await editor.locator('.edit-url').fill('https://example.com/lesson')
+    await page.getByTestId('save-entry').click()
+
+    await expect(page.locator('.entry', { hasText: '45m' })).toBeVisible()
+
+    const after = await apiCall(page, 'get', `/tasks/${created.id}`)
+    expect(after.estimated_minutes).toBe(45)
+    expect(after.resource_url).toBe('https://example.com/lesson')
+    // Untouched by an edit that never mentioned them.
+    expect(after.scheduled_date).toBe(week.week_start)
+    expect(after.date_locked).toBe(true)
+    expect(after.xp_reward).toBe(10)
+  })
+
   test('unfinished work from before today is surfaced, not carried forward', async ({ page }) => {
     // The teacher's half of the day cap: the backlog is a decision an adult
     // makes, not something that silently accumulates on a nine-year-old's

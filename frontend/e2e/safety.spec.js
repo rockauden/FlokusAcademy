@@ -103,7 +103,7 @@ test.describe('Ask Floki safety layer', () => {
     await logout(page)
 
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     const banner = page.locator('.safety-banner')
     await expect(banner).toBeVisible()

@@ -18,6 +18,7 @@ const weekStore = useWeekStore()
 const coursesStore = useCoursesStore()
 
 const error = ref('')
+const notice = ref('')
 // Which cell is currently accepting typing, as `${courseId}:${date}`. Only
 // one at a time — this is a form, not a spreadsheet.
 const typingIn = ref(null)
@@ -70,9 +71,63 @@ const days = computed(() => {
   })
 })
 
-const classes = computed(() =>
-  [...coursesStore.courses].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title))
-)
+// Deactivated classes are fetched too but shown only on request: a class you
+// stopped teaching should be out of the way, not gone — its completed work
+// still has to count toward the UFA record, and un-hiding has to be possible
+// without a screen of its own, because there is no longer a screen of its own.
+const sortClasses = list =>
+  [...list].sort((a, b) => a.sort_order - b.sort_order || a.title.localeCompare(b.title))
+
+const classes = computed(() => sortClasses(coursesStore.courses.filter(c => c.is_active)))
+const hiddenClasses = computed(() => sortClasses(coursesStore.courses.filter(c => !c.is_active)))
+
+const showHidden = ref(false)
+const addingClass = ref(false)
+const newClass = ref({ emoji: '📘', title: '' })
+
+async function addClass() {
+  const title = newClass.value.title.trim()
+  if (!title) { addingClass.value = false; return }
+  error.value = ''
+  try {
+    // subject_area and platform are required by the API and are not worth a
+    // question here — a household knows its classes by one name. Both default
+    // to the title and stay editable through the API if that ever matters.
+    await coursesStore.createCourse({
+      title,
+      subject_area: title,
+      platform: title,
+      emoji: newClass.value.emoji || '📘',
+      sort_order: coursesStore.courses.length,
+    })
+    newClass.value = { emoji: '📘', title: '' }
+    addingClass.value = false
+    await coursesStore.fetchCourses({ includeInactive: true })
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function hideClass(klass) {
+  error.value = ''
+  try {
+    await coursesStore.deactivateCourse(klass.id)
+    await coursesStore.fetchCourses({ includeInactive: true })
+    notice.value = `${klass.title} hidden. Its finished work still counts.`
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+async function restoreClass(klass) {
+  error.value = ''
+  try {
+    await coursesStore.updateCourse(klass.id, { ...klass, is_active: true })
+    await coursesStore.fetchCourses({ includeInactive: true })
+  } catch (e) {
+    error.value = e.message
+  }
+}
 
 function entriesFor(courseId, date) {
   if (!weekStore.week) return []
@@ -84,7 +139,7 @@ async function load(start = null) {
   try {
     await Promise.all([
       weekStore.fetchWeek(start),
-      coursesStore.courses.length ? Promise.resolve() : coursesStore.fetchCourses(),
+      coursesStore.fetchCourses({ includeInactive: true }),
     ])
   } catch (e) {
     error.value = e.message
@@ -122,6 +177,38 @@ async function commitDraft(courseId, date, { keepOpen = true } = {}) {
   }
 }
 
+// The details behind a card. This is what the task manager used to be for;
+// folding it in here is what let that page go. Only the fields a week's
+// planning actually touches — the rest keep their defaults.
+const editDraft = ref(null)
+
+function openEditor(entry) {
+  expanded.value = entry.id
+  editDraft.value = {
+    title: entry.title,
+    estimated_minutes: entry.estimated_minutes,
+    xp_reward: entry.xp_reward,
+    task_type: entry.task_type,
+    dependency_mode: entry.dependency_mode,
+    resource_url: entry.resource_url || '',
+    description: entry.description || '',
+  }
+}
+
+async function saveEdit(entry) {
+  error.value = ''
+  try {
+    // A partial PUT: exclude_unset on the API means the fields not sent keep
+    // their values, so this cannot quietly reset anything it does not show.
+    await weekStore.updateEntry(entry.id, editDraft.value)
+    await weekStore.fetchWeek(weekStore.week.week_start)
+    expanded.value = null
+    editDraft.value = null
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
 async function move(entry, date) {
   error.value = ''
   try {
@@ -131,6 +218,7 @@ async function move(entry, date) {
     error.value = e.message
   }
   expanded.value = null
+  editDraft.value = null
 }
 
 async function remove(entry) {
@@ -210,7 +298,15 @@ onMounted(() => load())
         <tbody>
           <tr v-for="klass in classes" :key="klass.id">
             <th class="class-col">
-              <span class="emoji">{{ klass.emoji }}</span> {{ klass.title }}
+              <span class="class-name">
+                <span class="emoji">{{ klass.emoji }}</span> {{ klass.title }}
+              </span>
+              <button
+                class="row-btn"
+                :title="`Hide ${klass.title}`"
+                :aria-label="`Hide ${klass.title}`"
+                @click="hideClass(klass)"
+              >−</button>
             </th>
             <td
               v-for="day in days"
@@ -224,12 +320,47 @@ onMounted(() => load())
                 :key="entry.id"
                 class="entry"
                 :class="{ done: entry.is_completed }"
-                @click.stop="expanded = expanded === entry.id ? null : entry.id"
+                @click.stop="expanded === entry.id ? (expanded = null) : openEditor(entry)"
               >
                 <span class="entry-title">{{ entry.title }}</span>
                 <span class="entry-min">{{ entry.estimated_minutes }}m</span>
 
-                <div v-if="expanded === entry.id" class="entry-actions" @click.stop>
+                <div v-if="expanded === entry.id && editDraft" class="entry-editor" @click.stop>
+                  <input class="edit-title" v-model="editDraft.title" aria-label="Title" />
+
+                  <div class="edit-row">
+                    <label>Minutes <input type="number" v-model.number="editDraft.estimated_minutes" /></label>
+                    <label>XP <input type="number" v-model.number="editDraft.xp_reward" /></label>
+                  </div>
+
+                  <div class="edit-row">
+                    <label>Type
+                      <select v-model="editDraft.task_type">
+                        <option value="lesson">Lesson</option>
+                        <option value="reading">Reading</option>
+                        <option value="practice">Practice</option>
+                        <option value="project">Project</option>
+                        <option value="quiz">Quiz</option>
+                        <option value="review">Review</option>
+                      </select>
+                    </label>
+                    <label>With
+                      <select v-model="editDraft.dependency_mode" class="dependency-mode">
+                        <option value="independent">On his own</option>
+                        <option value="teacher_led">Dad</option>
+                        <option value="live_scheduled">Live class</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <input class="edit-url" v-model="editDraft.resource_url" placeholder="Link (optional)" />
+                  <textarea
+                    class="edit-notes"
+                    v-model="editDraft.description"
+                    rows="2"
+                    placeholder="Notes for Sonny (optional)"
+                  ></textarea>
+
                   <label class="move-label">
                     Move to
                     <select @change="move(entry, $event.target.value)" :value="entry.scheduled_date">
@@ -238,7 +369,11 @@ onMounted(() => load())
                       </option>
                     </select>
                   </label>
-                  <button class="link-btn danger" @click="remove(entry)">Remove</button>
+
+                  <div class="edit-actions">
+                    <button class="btn-primary sm" data-testid="save-entry" @click="saveEdit(entry)">Save</button>
+                    <button class="link-btn danger" @click="remove(entry)">Remove</button>
+                  </div>
                 </div>
               </div>
 
@@ -261,7 +396,43 @@ onMounted(() => load())
             </td>
           </tr>
         </tbody>
+        <tfoot>
+          <tr class="add-row">
+            <th class="class-col">
+              <template v-if="addingClass">
+                <input class="emoji-input" v-model="newClass.emoji" maxlength="2" aria-label="Emoji" />
+                <input
+                  class="class-input"
+                  v-model="newClass.title"
+                  placeholder="Class name"
+                  autofocus
+                  @keyup.enter="addClass"
+                  @keyup.escape="addingClass = false; newClass.title = ''"
+                  @blur="addClass"
+                />
+              </template>
+              <button v-else class="row-btn add" data-testid="add-class" @click="addingClass = true">
+                + Add a class
+              </button>
+            </th>
+            <td :colspan="days.length"></td>
+          </tr>
+        </tfoot>
       </table>
+    </div>
+
+    <p v-if="notice" class="text-muted footnote">{{ notice }}</p>
+
+    <div v-if="hiddenClasses.length" class="hidden-classes">
+      <button class="link-btn" @click="showHidden = !showHidden">
+        {{ showHidden ? 'Hide' : `${hiddenClasses.length} hidden class${hiddenClasses.length === 1 ? '' : 'es'}` }}
+      </button>
+      <span v-if="showHidden" class="hidden-list">
+        <span v-for="k in hiddenClasses" :key="k.id" class="hidden-item">
+          {{ k.emoji }} {{ k.title }}
+          <button class="link-btn" @click="restoreClass(k)">bring back</button>
+        </span>
+      </span>
     </div>
 
     <p class="text-muted footnote" v-if="weekStore.week">
@@ -376,4 +547,67 @@ tbody th.class-col { text-align: left; font-weight: 500; }
 }
 .link-btn.danger { color: var(--color-danger, #e05252); }
 .footnote { margin-top: var(--space-md); font-size: 0.8125rem; }
+
+tbody th.class-col { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.class-name { overflow-wrap: anywhere; }
+.row-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+tbody th.class-col:hover .row-btn { opacity: 0.7; }
+.row-btn:hover, .row-btn:focus-visible { opacity: 1; background: rgba(255,255,255,0.08); }
+.row-btn.add { opacity: 0.75; font-size: 0.8125rem; }
+.row-btn.add:hover { opacity: 1; }
+
+.add-row th { background: transparent; }
+.emoji-input { width: 3ch; text-align: center; margin-right: 6px; }
+.class-input { width: calc(100% - 4ch); font-size: 0.875rem; }
+
+.hidden-classes { margin-top: var(--space-md); font-size: 0.8125rem; }
+.hidden-list { display: inline-flex; flex-wrap: wrap; gap: var(--space-sm); margin-left: var(--space-sm); }
+.hidden-item { color: var(--text-secondary); display: inline-flex; gap: 5px; align-items: center; }
+
+.entry-editor {
+  position: absolute;
+  z-index: 6;
+  left: 4px;
+  right: 4px;
+  top: 4px;
+  width: 240px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default, rgba(255,255,255,0.16));
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: default;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.entry-editor input, .entry-editor select, .entry-editor textarea {
+  width: 100%;
+  font-size: 0.8125rem;
+  padding: 3px 6px;
+}
+.edit-title { font-weight: 600; }
+.edit-row { display: flex; gap: 6px; }
+.edit-row label {
+  flex: 1;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.edit-notes { resize: vertical; font-family: inherit; }
+.edit-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 2px; }
+.btn-primary.sm { padding: 4px 12px; font-size: 0.8125rem; }
 </style>

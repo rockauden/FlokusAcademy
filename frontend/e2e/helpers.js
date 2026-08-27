@@ -95,23 +95,23 @@ export function weekdayOf(isoString) {
 }
 
 /**
- * Create a task through the Quick Add form. Returns the title used, which is
- * unique per call so specs can assert on their own row.
+ * Create one piece of work for today, for specs about what happens *after* it
+ * exists — completion, XP, streaks, the student's day.
+ *
+ * Posts to the API rather than typing into the planner, deliberately. It has
+ * to land on today or the student's day view will not show it, and the planner
+ * shows next week from Friday onward and has no column for a weekend — so a
+ * UI-driven helper would fail on three days out of seven for reasons that have
+ * nothing to do with what these specs test. That the grid itself creates work
+ * correctly is proved in week.spec.js, where it is the subject rather than the
+ * setup.
  */
 export async function quickAddTask(page, titlePrefix = 'E2E task') {
   const title = `${titlePrefix} ${Date.now()}`
-
-  await page.goto('/admin/tasks')
-  await page.getByRole('button', { name: 'Quick Add' }).click()
-
-  const form = page.locator('.task-form')
-  await expect(form).toBeVisible()
-
-  await form.locator('input[type="text"]').first().fill(title)
-  // The first select is the course picker; option "1" is the seeded Math
-  // program. Selecting by index would silently pass if the order changed.
-  await form.locator('select').first().selectOption('1')
-  await form.getByRole('button', { name: 'Save Task' }).click()
-
+  await apiCall(page, 'post', '/week/entries', {
+    course_id: 1,
+    scheduled_date: todayISO(),
+    title,
+  })
   return title
 }

@@ -435,3 +435,18 @@ class WeekEntryMove(BaseModel):
 class ClearUnstartedResult(BaseModel):
     lessons_deleted: int
     completed_kept: int
+
+
+# --- Maintenance ---
+
+class ResetCurriculumRequest(BaseModel):
+    # Typed in full by the teacher. A boolean would be one stray click away
+    # from destroying a year of records.
+    confirm: str
+
+class ResetCurriculumResult(BaseModel):
+    assignments: int
+    lessons: int
+    units: int
+    xp_entries: int
+    purchases: int

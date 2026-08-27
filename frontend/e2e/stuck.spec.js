@@ -26,7 +26,7 @@ test.describe('stuck flags reach the parent', () => {
   test('unresolved flags appear on the admin screen', async ({ page }) => {
     await login(page, 'teacher')
     await stubFlags(page)
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     const strip = page.locator('.stuck-strip')
     await expect(strip).toBeVisible()
@@ -40,7 +40,7 @@ test.describe('stuck flags reach the parent', () => {
     // without anyone noticing.
     await login(page, 'teacher')
     await stubFlags(page)
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     const stuckBorder = await page.locator('.stuck').first()
       .evaluate((el) => getComputedStyle(el).borderLeftColor)
@@ -56,7 +56,7 @@ test.describe('stuck flags reach the parent', () => {
     await page.route('**/api/students/stuck-flags/*/resolve', (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...FLAGS[0], resolved_at: new Date().toISOString() }) }),
     )
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     const strip = page.locator('.stuck-strip')
     await expect(strip).toContainText('dividing fractions')
@@ -70,7 +70,7 @@ test.describe('stuck flags reach the parent', () => {
   test('nothing is shown when there is nothing to report', async ({ page }) => {
     await login(page, 'teacher')
     await stubFlags(page, [])
-    await page.goto('/admin/tasks')
+    await page.goto('/admin/week')
 
     await expect(page.locator('.admin-layout')).toBeVisible()
     await expect(page.locator('.stuck-strip')).toHaveCount(0)

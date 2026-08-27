@@ -59,19 +59,25 @@ test.describe('a partial update leaves the rest of the lesson alone', () => {
 })
 
 test.describe('one dependency_mode vocabulary', () => {
-  test('the form offers only values the API accepts', async ({ page }) => {
+  test('the editor offers only values the API accepts', async ({ page }) => {
     // B6. The form offered `with_teacher` while every other layer said
     // `teacher_led`, and the schema typed it as a bare string, so nothing
-    // caught the mismatch. The scheduler that used to mis-handle it is gone;
-    // the vocabulary still has to agree, and the Literal is what enforces it.
+    // caught the mismatch. The scheduler that used to mis-handle it is gone
+    // and so is the task-manager form; the vocabulary still has to agree, and
+    // the card editor in the planner is where it is now offered.
     await login(page, 'teacher')
-    await page.goto('/admin/tasks')
-    await page.getByRole('button', { name: 'Quick Add' }).click()
 
-    // By class, not by index: this form grows a select or two in the same
-    // phase, and an index-based locator would start asserting on the wrong one
-    // while still passing.
-    const dependency = page.locator('.task-form .dependency-mode')
+    const week = await apiCall(page, 'get', '/week/')
+    await apiCall(page, 'post', '/week/entries', {
+      course_id: 1,
+      scheduled_date: week.week_start,
+      title: `Editor check ${Date.now()}`,
+    })
+
+    await page.goto('/admin/week')
+    await page.locator('.entry').first().click()
+
+    const dependency = page.locator('.entry-editor .dependency-mode')
     await expect(dependency.locator('option[value="teacher_led"]')).toHaveCount(1)
     await expect(dependency.locator('option[value="with_teacher"]')).toHaveCount(0)
   })

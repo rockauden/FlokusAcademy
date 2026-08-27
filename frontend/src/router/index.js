@@ -22,8 +22,6 @@ const routes = [
     children: [
       { path: '', redirect: '/admin/week' },
       { path: 'week', component: () => import('../views/admin/WeekPlannerView.vue') },
-      { path: 'programs', component: () => import('../views/admin/ProgramManagerView.vue') },
-      { path: 'tasks', component: () => import('../views/admin/TaskManagerView.vue') },
       { path: 'calendar', component: () => import('../views/admin/CalendarManagerView.vue') },
       { path: 'projects', component: () => import('../views/admin/ProjectManagerView.vue') },
       { path: 'portfolio', component: () => import('../views/admin/PortfolioView.vue') },

@@ -96,6 +96,28 @@ time. All figures below are from `flokus.db.original-677-backup`.
 In development. Has never run a school day. V1 keeps running until V2 can take one over without
 anyone noticing the change.
 
+### 2026-08-27 (later) — One screen to plan from
+
+#### Added
+
+- **Add and retire classes from the planner**: a `+ Add a class` row at the
+  foot of the grid, a `-` on each class row, and hidden classes one click from
+  coming back. Hiding deactivates, so finished work still counts.
+- **Card editor**: click any card in the grid to set minutes, XP, type,
+  whether it needs Dad, a link and notes. A partial update, so it cannot reset
+  anything it does not show.
+- **Start over** (Settings): `POST /api/maintenance/reset-curriculum` deletes
+  every lesson, assignment, unit, XP entry and purchase, keeping classes,
+  accounts, the calendar, UFA expenses and reward definitions. Requires the
+  phrase `DELETE ALL WORK` typed in full, re-checked server-side.
+
+#### Removed
+
+- The **Classes** page and the **Task Manager** page, and `TaskForm.vue` with
+  them — including the last legacy JSON bulk-import tab.
+
+58 e2e tests pass.
+
 ### 2026-08-27 — The week planner; the importer and the rolling scheduler removed
 
 The app stopped trying to manage curriculum and started helping plan a week.
