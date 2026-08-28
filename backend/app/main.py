@@ -66,11 +66,22 @@ async def lifespan(app: FastAPI):
     await engine.dispose()
 
 
+# The interactive docs are opt-in. Passing None for these three URLs is how
+# FastAPI is told not to mount /docs, /redoc and /openapi.json at all -- they
+# return an ordinary 404 rather than existing behind a guard, so there is no
+# endpoint left to probe. See ENABLE_API_DOCS in app/config.py.
+_docs_urls = (
+    {"docs_url": "/docs", "redoc_url": "/redoc", "openapi_url": "/openapi.json"}
+    if settings.ENABLE_API_DOCS
+    else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+)
+
 app = FastAPI(
     title="Flokus Academy API",
     description="Backend for the Flokus Academy Homeschool LMS",
     version="1.0.0",
     lifespan=lifespan,
+    **_docs_urls,
 )
 
 app.state.limiter = limiter
