@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { api } from '../../api/client'
+import { useFlokiStore } from '../../stores/floki'
 
 const sessionId = 'sonny_chat_1'
 const messages = ref([])
@@ -8,7 +9,15 @@ const input = ref('')
 const loading = ref(false)
 const persona = ref('Socratic Tutor')
 
+// The tutor can be switched off server-side. Ask first, and render nothing
+// either way until the answer arrives — see stores/floki.js for why the
+// unknown state is not the same as "off".
+const floki = useFlokiStore()
+
 onMounted(async () => {
+  const available = await floki.fetchStatus()
+  if (!available) return
+
   try {
     const history = await api.get(`/ai/history/${sessionId}`)
     // The API returns rows shaped { sender, message }; the template renders
@@ -56,6 +65,17 @@ function quickAsk(topic) {
 
 <template>
   <div class="chat-view">
+    <!-- Nothing at all until the server has answered. A flash of "resting"
+         that turns into a chat box reads as a glitch. -->
+    <div v-if="floki.enabled === false" class="resting">
+      <div class="resting-icon" aria-hidden="true">💤</div>
+      <h2>Floki is having a rest</h2>
+      <p>Your dad will wake him up when he's ready.</p>
+      <p class="resting-sub">Everything else still works — go and finish your quests!</p>
+      <router-link to="/student/quests" class="btn-primary">Back to my quests</router-link>
+    </div>
+
+    <template v-else-if="floki.enabled === true">
     <header class="chat-header">
       <h2>Floki AI Tutor 💬</h2>
       <span class="persona-badge">Persona: {{ persona }}</span>
@@ -86,10 +106,40 @@ function quickAsk(topic) {
       />
       <button class="btn-primary" @click="sendMessage()" :disabled="loading">Send</button>
     </div>
+    </template>
   </div>
 </template>
 
 <style scoped>
+/* The resting state. Centred, roomy and quiet — it is a normal state of the
+   app, not a failure, so it must not borrow any of the error styling. */
+.resting {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-sm);
+  flex: 1;
+  padding: var(--space-lg);
+}
+.resting-icon {
+  font-size: 3.5rem;
+  line-height: 1;
+  margin-bottom: var(--space-sm);
+}
+.resting h2 {
+  margin: 0;
+}
+.resting p {
+  margin: 0;
+  color: var(--text-muted);
+  max-width: 34ch;
+}
+.resting-sub {
+  margin-bottom: var(--space-md) !important;
+}
+
 .chat-view {
   display: flex;
   flex-direction: column;

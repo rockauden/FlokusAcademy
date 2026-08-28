@@ -38,6 +38,13 @@ TEST_ENV = {
     # path short-circuits before any model call, so no request ever leaves the
     # machine and no real key is needed to test the thing that matters most.
     "GEMINI_API_KEY": "e2e-placeholder-not-a-real-key",
+    # Production ships with the tutor OFF (see FLOKI_ENABLED in app/config.py).
+    # The suite turns it on because the safety and stuck-flag specs are the most
+    # important tests in the repo and only run when the feature is reachable.
+    # The switched-off experience is covered from the client side in
+    # floki.spec.js, which intercepts the status call rather than restarting the
+    # API with a different environment.
+    "FLOKI_ENABLED": "true",
 }
 
 

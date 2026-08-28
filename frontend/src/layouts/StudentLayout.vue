@@ -1,10 +1,16 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useFlokiStore } from '../stores/floki'
 
 const router = useRouter()
 const authStore = useAuthStore()
+
+// Hide the Ask Floki link when the tutor is switched off, so the sidebar never
+// offers a door that only leads to "he's resting".
+const floki = useFlokiStore()
+onMounted(() => floki.fetchStatus())
 
 const sidebarOpen = ref(false)
 const showPinModal = ref(false)
@@ -51,7 +57,7 @@ async function switchToAdmin() {
           <span class="icon">🛠️</span>
           <span class="label" v-if="sidebarOpen">Creator Block</span>
         </router-link>
-        <router-link to="/student/floki" class="nav-link" active-class="active">
+        <router-link v-if="floki.enabled === true" to="/student/floki" class="nav-link" active-class="active">
           <span class="icon">💬</span>
           <span class="label" v-if="sidebarOpen">Ask Floki</span>
         </router-link>

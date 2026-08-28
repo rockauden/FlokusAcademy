@@ -22,6 +22,27 @@ client = None
 if settings.GEMINI_API_KEY:
     client = genai.Client(api_key=settings.GEMINI_API_KEY.get_secret_value())
 
+
+# Shown to the student when the tutor is switched off. Deliberately warm and
+# final rather than apologetic or error-shaped: a nine-year-old reading "503"
+# or "disabled" learns that the app is broken. This says the thing is resting
+# and points him back at his work.
+FLOKI_RESTING_MESSAGE = (
+    "Floki is having a rest at the moment. Your dad will wake him up when he's "
+    "ready. Everything else still works - go and finish your quests!"
+)
+
+
+def floki_is_available() -> bool:
+    """Both halves have to be true, and they fail for different reasons.
+
+    FLOKI_ENABLED is the deliberate policy switch (see app/config.py for why it
+    defaults to off). A missing client means the API key was never configured.
+    Either one absent means no request should reach Google, so they are checked
+    together everywhere rather than at each call site.
+    """
+    return bool(settings.FLOKI_ENABLED) and client is not None
+
 # Stored sender values. Deliberately role-based rather than the child's name:
 # nothing that identifies the child should sit in the chat table, which is the
 # most sensitive data this platform holds (COPPA §312.8, data minimisation).
@@ -148,8 +169,22 @@ async def _messages_sent_today(db: AsyncSession, user: User) -> int:
     return result.scalar_one()
 
 
+@router.get("/status")
+async def floki_status(user: User = Depends(get_current_active_user)):
+    """Whether the tutor is available, so the client never offers a dead box.
+
+    The student view asks this before rendering. Without it the only way to
+    discover the tutor is off is to type a question and receive an error, which
+    is exactly the "crash screen for an ordinary state" the student side is not
+    allowed to have.
+    """
+    return {"enabled": floki_is_available()}
+
+
 @router.get("/personas")
 async def list_personas(user: User = Depends(get_current_active_user)):
+    if not floki_is_available():
+        return []
     return list(PERSONAS.keys())
 
 @router.get("/history/{session_id}", response_model=List[ChatMessageResponse])
@@ -176,8 +211,12 @@ async def chat_with_ai(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_active_user)
 ):
-    if not client:
-        raise HTTPException(status_code=503, detail="AI Tutor is disabled (No API key)")
+    # Checked before the message is stored, not after: when the tutor is off,
+    # nothing the child types should be persisted either. The transcript is the
+    # most sensitive table here, and there is no reason to grow it while the
+    # feature that reads it is switched off.
+    if not floki_is_available():
+        raise HTTPException(status_code=503, detail=FLOKI_RESTING_MESSAGE)
 
     # Cost and abuse ceiling, checked before anything is written or sent.
     if await _messages_sent_today(db, user) >= settings.FLOKI_DAILY_MESSAGE_LIMIT:

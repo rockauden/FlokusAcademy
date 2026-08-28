@@ -56,8 +56,39 @@ class Settings(BaseSettings):
     # outright. A rolling window keeps both bounded.
     FLOKI_CONTEXT_MESSAGES: int = 20
 
+    # Master switch for Ask Floki, and it defaults to OFF on purpose.
+    #
+    # Google's Gemini API Additional Terms say an API Client must not be
+    # "directed towards or ... likely to be accessed by individuals under the
+    # age of 18", and on the unpaid tier Google uses submitted prompts to train
+    # its models, with human reviewers able to read them. This application is
+    # used by one nine-year-old, so both clauses bite.
+    #
+    # Off by default means a fresh deploy, a new environment or a forgotten
+    # variable all fail in the safe direction: the tutor is simply absent.
+    # Turning it on is a deliberate act that should follow a paid API key (or a
+    # provider whose terms permit under-18 use with parental consent) -- not a
+    # default someone inherits without knowing what it sends where.
+    #
+    # Nothing else is removed when this is false. Transcripts, safety events,
+    # consent records and retention all keep working, so the feature comes back
+    # by flipping one variable rather than by rebuilding it.
+    FLOKI_ENABLED: bool = False
+
     # Secure cookies require HTTPS. Set false for plain-http local development.
     COOKIE_SECURE: bool = True
+
+    # Swagger UI, ReDoc and the OpenAPI schema. Off by default.
+    #
+    # These were reachable unauthenticated in production, which handed anyone
+    # who found the hostname a complete, machine-readable map of every endpoint
+    # -- including the destructive maintenance route and the login shape. None
+    # of that is secret exactly, but publishing it to strangers buys nothing
+    # when the only two users are a father and his son, and the source is right
+    # here for anyone who is meant to have it.
+    #
+    # Set ENABLE_API_DOCS=true locally when exploring the API by hand.
+    ENABLE_API_DOCS: bool = False
 
     @field_validator("SECRET_KEY")
     @classmethod
