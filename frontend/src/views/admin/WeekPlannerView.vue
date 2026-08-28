@@ -310,12 +310,47 @@ async function move(entry, date) {
   editDraft.value = null
 }
 
+/**
+ * Removing is two clicks, not one.
+ *
+ * The first click arms it and the button says so; the second does it. The
+ * server refuses to delete anything already marked done, so this guards the
+ * other case — dropping a week of planned work by catching the wrong button.
+ * A two-step button rather than a browser confirm() dialog: the dialog blocks
+ * the page, reads as an error, and cannot be styled or tested cleanly.
+ *
+ * The armed state clears itself after a few seconds so a half-pressed Remove
+ * never sits waiting to fire on a click meant for something else.
+ */
+const pendingRemove = ref(null)
+let pendingTimer = null
+
+function armRemove(entry) {
+  clearTimeout(pendingTimer)
+  pendingRemove.value = entry.id
+  pendingTimer = setTimeout(() => { pendingRemove.value = null }, 5000)
+}
+
+function cancelRemove() {
+  clearTimeout(pendingTimer)
+  pendingRemove.value = null
+}
+
 async function remove(entry) {
+  if (pendingRemove.value !== entry.id) {
+    armRemove(entry)
+    return
+  }
+
+  cancelRemove()
   error.value = ''
   try {
     await weekStore.removeEntry(entry.id)
     await weekStore.fetchWeek(weekStore.week.week_start)
   } catch (e) {
+    // A 409 here is the server refusing to delete completed work. It is a
+    // sentence written for the teacher, so show it as-is rather than wrapping
+    // it in anything that makes it look like a fault.
     error.value = e.message
   }
   expanded.value = null
@@ -356,7 +391,13 @@ onMounted(() => load())
           <button class="link-btn" @click="move(b, days[0]?.date)" title="Move into this week">
             move up
           </button>
-          <button class="link-btn danger" @click="remove(b)" title="Drop it">drop</button>
+          <button
+            class="link-btn danger"
+            :class="{ armed: pendingRemove === b.id }"
+            :data-testid="`drop-${b.id}`"
+            @click="remove(b)"
+            :title="pendingRemove === b.id ? 'Click again to drop it' : 'Drop it'"
+          >{{ pendingRemove === b.id ? 'really drop?' : 'drop' }}</button>
         </span>
       </div>
     </div>
@@ -509,7 +550,18 @@ onMounted(() => load())
 
                   <div class="edit-actions">
                     <button class="btn-primary sm" data-testid="save-entry" @click="saveEdit(entry)">Save</button>
-                    <button class="link-btn danger" @click="remove(entry)">Remove</button>
+                    <button
+                      class="link-btn danger"
+                      :class="{ armed: pendingRemove === entry.id }"
+                      data-testid="remove-entry"
+                      @click="remove(entry)"
+                    >{{ pendingRemove === entry.id ? 'Really remove?' : 'Remove' }}</button>
+                    <button
+                      v-if="pendingRemove === entry.id"
+                      class="link-btn"
+                      data-testid="cancel-remove"
+                      @click="cancelRemove()"
+                    >Keep it</button>
                   </div>
                 </div>
               </div>
@@ -580,6 +632,12 @@ onMounted(() => load())
 </template>
 
 <style scoped>
+/* An armed Remove has to look different from an idle one, or the two-step is
+   invisible and the second click feels like the first one did nothing. */
+.link-btn.danger.armed {
+  font-weight: 700;
+  text-decoration: underline;
+}
 .page-header {
   display: flex;
   justify-content: space-between;

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { login, logout, apiCall, isoDate } from './helpers.js'
+import { login, logout, apiCall, apiError, isoDate } from './helpers.js'
 
 /**
  * The week planner — the Sunday screen, and since 2026-08-26 the only way
@@ -103,11 +103,18 @@ test.describe('planning a week by hand', () => {
     expect((await apiCall(page, 'get', `/tasks/${created.id}`)).scheduled_date).toBe(thursday)
   })
 
-  test('removing an entry takes its XP back out of the ledger', async ({ page }) => {
+  test('removing an entry never strands XP in the ledger', async ({ page }) => {
     // Hand-entered work is authored per week, so a lesson here has no reuse to
     // protect and removing it should really remove it. What must not vanish
     // quietly is XP already awarded: the balance has to come back down, and it
     // does so as a new negative row, never by deleting history.
+    //
+    // Since 2026-08-28 that no longer happens in one step. Completed work is
+    // part of the school record and the server refuses to delete it, so the
+    // route from "finished" to "gone" runs through uncomplete — which is where
+    // the reversal now happens. This walks the whole path and checks the
+    // balance lands in the right place at each stage, because the hazard being
+    // guarded is the same one either way: XP for work that no longer exists.
     //
     // The balance is read as the student on purpose. /analytics/summary always
     // reports the calling user's own XP, and the teacher has none — reading it
@@ -134,6 +141,22 @@ test.describe('planning a week by hand', () => {
     await login(page, 'student')
     const before = (await apiCall(page, 'get', '/analytics/summary')).xp_balance
 
+    await logout(page)
+    await login(page, 'teacher')
+
+    // Completed: the delete is refused and nothing changes.
+    expect(await apiError(page, 'delete', `/week/entries/${created.id}`)).not.toBeNull()
+
+    // Uncompleting is the deliberate step that gives the XP back.
+    await apiCall(page, 'post', `/tasks/${created.id}/uncomplete`)
+
+    await logout(page)
+    await login(page, 'student')
+    const afterUncomplete = (await apiCall(page, 'get', '/analytics/summary')).xp_balance
+    expect(afterUncomplete).toBe(before - 25)
+
+    // And now it can go, without disturbing the balance again — a second
+    // reversal here would take the student below where he started.
     await logout(page)
     await login(page, 'teacher')
     await apiCall(page, 'delete', `/week/entries/${created.id}`)

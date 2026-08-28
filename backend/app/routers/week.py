@@ -218,30 +218,58 @@ async def move_entry(
 async def remove_entry(
     id: int, db: AsyncSession = Depends(get_db), user: User = Depends(require_teacher_user)
 ):
-    """Remove one item from the plan.
+    """Remove one item from the plan — but only if nobody has finished it.
 
     Hand-entered work is authored per week, so a lesson here has exactly one
-    assignment per student and no reuse to protect — deleting the lesson is
-    the honest thing, and leaving orphans behind would slowly fill the
-    portfolio with work nobody ever did. Any XP already earned is reversed
-    through the ledger first, as a new negative row: the balance stays correct
-    and the history stays readable.
+    assignment per student and no reuse to protect. Deleting the lesson is the
+    honest thing for work that was planned and then reconsidered, and leaving
+    orphans behind would slowly fill the portfolio with work nobody ever did.
+
+    **Completed work is refused.** This used to delete regardless, which meant
+    one click on a finished card destroyed the completion, the focus minutes
+    and the notes, and reversed XP the student had genuinely earned — silently,
+    with no confirmation and no undo. That is a hole in the compliance record
+    and, from the child's side, points vanishing for work he actually did.
+
+    The rule already existed elsewhere and this endpoint was the exception:
+    `POST /courses/{id}/clear-unstarted` keeps anything completed, and the
+    architecture note says earned XP stays earned. A 409 naming the item is the
+    same shape that endpoint uses. The escape hatch is deliberate and visible —
+    mark it not-done first, which is a decision the teacher takes on purpose,
+    and then it can go.
+
+    XP is still reversed for the uncompleted case. Nothing was earned there, so
+    in practice the ledger has nothing to reverse; the call stays because a
+    partially-completed multi-student lesson would otherwise leave a balance no
+    surviving row explains.
     """
     a = await AssignmentRepository.get(db, tenant_id=user.tenant_id, assignment_id=id)
     if not a:
         raise HTTPException(status_code=404, detail="Not found")
 
     lesson = a.lesson
-    siblings = await AssignmentRepository.list(db, tenant_id=user.tenant_id)
+    siblings = await AssignmentRepository.list_for_lesson(
+        db, tenant_id=user.tenant_id, lesson_id=lesson.id
+    )
+
+    if any(sibling.is_completed for sibling in siblings):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f'"{lesson.title}" has already been marked done, so it is part of '
+                "the school record and was not removed. Mark it as not done first "
+                "if you really want it gone."
+            ),
+        )
+
     for sibling in siblings:
-        if sibling.lesson_id == lesson.id:
-            await reverse_xp_for_source(
-                db,
-                tenant_id=user.tenant_id,
-                source_type=SOURCE_TYPE,
-                source_id=sibling.id,
-                reason=f"Removed from the plan: {lesson.title}",
-            )
+        await reverse_xp_for_source(
+            db,
+            tenant_id=user.tenant_id,
+            source_type=SOURCE_TYPE,
+            source_id=sibling.id,
+            reason=f"Removed from the plan: {lesson.title}",
+        )
 
     await db.delete(lesson)  # cascades to its assignments
     await db.commit()

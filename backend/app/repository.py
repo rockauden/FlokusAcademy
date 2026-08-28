@@ -192,6 +192,26 @@ class AssignmentRepository:
         ).scalars().all()
 
     @staticmethod
+    async def list_for_lesson(
+        db: AsyncSession, tenant_id: int, lesson_id: int
+    ) -> Sequence[Assignment]:
+        """Every student's copy of one lesson.
+
+        Deleting or reversing anything that hangs off a lesson has to see all
+        of them, not just the one the teacher clicked. The previous caller
+        scanned every assignment in the tenant and filtered in Python, which
+        was correct but loaded a whole school year to find two rows.
+        """
+        return (
+            await db.execute(
+                select(Assignment).where(
+                    Assignment.tenant_id == tenant_id,
+                    Assignment.lesson_id == lesson_id,
+                )
+            )
+        ).scalars().all()
+
+    @staticmethod
     async def list_before(
         db: AsyncSession, tenant_id: int, before: date
     ) -> Sequence[Assignment]:
