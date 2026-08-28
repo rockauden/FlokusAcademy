@@ -29,8 +29,9 @@
 | **The app** | One planning screen. The teacher types a week by hand; nothing is imported, scheduled or moved. |
 | **V2 in production** | Deployed on `main`, migration head `e5a2b8d17c40`. In real use for planning; has not run a school day. |
 | **V1** | Still running the 2026–27 year. Cutover is now a live question — the workflow objection is gone. |
-| **Tests** | 61 Playwright e2e, green. |
-| **Branch** | `main`, with `school-year-2026-27` kept in step. |
+| **Tests** | 70 Playwright e2e, green. |
+| **Branch** | `main`, with `school-year-2026-27` kept in step. `hardening/go-live` open for review. |
+| **Ask Floki** | **Off** (`FLOKI_ENABLED=false`). A flag, not a deletion — see 2026-08-28 below. |
 
 **The phased build plan that used to live here is finished, and most of what it
 built is gone.** Phases 1–3 designed and delivered curriculum authoring, a CSV
@@ -107,6 +108,55 @@ the migrations have never run on Postgres, and one completion spec flaked once.
 ## Decisions changed in flight
 
 *Append here. Date, what changed, why. Empty is the correct state at the start.*
+
+### 2026-08-28 — Going live: four blockers closed, and one behaviour deliberately removed
+
+Branch `hardening/go-live`, four commits, 70 e2e green (61 before, 9 added).
+Driven by the readiness audit of the same date; the four items below were the
+ones judged blocking for a real school week.
+
+**Ask Floki is switched off, not removed.** Google's Gemini API Additional
+Terms say an API Client must not be *"directed towards or ... likely to be
+accessed by individuals under the age of 18"*, and the unpaid tier uses
+submitted prompts for training with human review. `FLOKI_ENABLED` defaults to
+false. Everything behind it — transcripts, `SafetyEvent`, consent, retention —
+is untouched, so the feature returns by flipping one variable once the key is
+paid. **Do not treat the tutor as deleted or propose removing its tables.**
+
+**`DELETE /api/week/entries/{id}` now refuses completed work — this is a
+behaviour change, and it is the one worth reading twice.** It used to delete
+the lesson and cascade to every assignment, completed ones included, with no
+confirmation. The endpoint was the exception to a rule the rest of the codebase
+already followed (`clear-unstarted` keeps completions; "earned XP stays
+earned"). It now 409s, naming the lesson. The route from finished to gone runs
+through `uncomplete`, which is where XP reversal already lived.
+
+*The test that had to change:* `week.spec.js` — *removing an entry takes its XP
+back out of the ledger* asserted the old one-step behaviour. Rewritten as
+*removing an entry never strands XP in the ledger*, walking complete → refused
+delete → uncomplete → delete, so the hazard it guards is still guarded.
+
+**API docs are opt-in.** `/docs`, `/redoc` and `/openapi.json` were public on
+`api.flokusacademy.com`. `ENABLE_API_DOCS` defaults false; FastAPI is passed
+None for all three so they are never mounted.
+
+**`backend/scripts/backup_db.py`** — the gap that made the audit say "not yet"
+on cutover. Modelled on V1's `backup_db.py` down to the env var, retention
+policy and exit codes. Verifies every archive before pruning: `pg_restore` can
+parse it, required tables present, and assignment rows *inside the archive*
+match the live count. Runbook in `docs/BACKUP_AND_RESTORE.md`.
+
+**Still owed before the first school day** — all outside the repo:
+Sonny's PIN and Dad's PIN lengthened in Railway; `FLOKI_ENABLED` left unset (or
+false); `CORS_ORIGINS` checked; the root and `www` pointed at `app.` ; an uptime
+monitor on `/health/ready`; and **one restore actually performed** — the backup
+script is not finished work until a dump has been restored and counted.
+
+**Environment note for future sessions.** Git on the mounted Windows folder
+cannot unlink its own `.git/*.lock` files, so every git command leaves one and
+the next command refuses. Deleting them needs a delete-permission grant; the
+`GIT_INDEX_FILE=/tmp/...` trick buys exactly one commit and then leaves a
+`HEAD.lock` behind. Ask for the grant early rather than working around it.
 
 <!--
 Example:

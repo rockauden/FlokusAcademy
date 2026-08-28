@@ -56,7 +56,7 @@ test.describe('Ask Floki, switched off', () => {
     await page.goto('/student/quests')
 
     // Matched on href, not on the visible label: the sidebar collapses to
-    // icon-only and drops its text, so a name-based locator finds nothing
+    // icon-only and drops its text, so a name-based locator would find nothing
     // either way and the assertion would pass while proving nothing.
     await expect(page.locator('a[href="/student/quests"]')).toHaveCount(1)
     await expect(page.locator('a[href="/student/floki"]')).toHaveCount(0)
