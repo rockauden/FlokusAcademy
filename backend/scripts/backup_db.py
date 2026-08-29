@@ -274,6 +274,26 @@ def main():
         return 1
 
     url = libpq_url(raw)
+
+    # Check the URL looks like a URL before handing it to psql. Without this,
+    # an unedited placeholder or a half-pasted string is passed straight
+    # through, and libpq falls back to its default of localhost:5432 -- so the
+    # failure reads "connection to server at localhost ... Connection refused",
+    # which sends you looking for a broken database instead of a broken
+    # variable. Found the first time this script was run for real.
+    parts = urlsplit(url)
+    if parts.scheme not in ("postgresql", "postgres") or not parts.hostname:
+        log("FAILED: DATABASE_URL does not look like a database URL.")
+        log(f"        got: {raw[:60]}{'...' if len(raw) > 60 else ''}")
+        log("")
+        log("It should start with postgresql:// and contain a host, e.g.")
+        log("    postgresql://postgres:PASSWORD@shinkansen.proxy.rlwy.net:34567/railway")
+        log("")
+        log("Copy DATABASE_PUBLIC_URL from Railway's Postgres service ->")
+        log("Variables tab. If you are using a .bat file, check the placeholder")
+        log("was actually replaced.")
+        return 1
+
     dest = Path(os.environ.get("FLOKUS_BACKUP_DIR", DEFAULT_DEST))
     now = datetime.now()
     out = dest / f"{PREFIX}{now.strftime(STAMP)}{SUFFIX}"

@@ -15,6 +15,39 @@ control.
 
 ## One-time setup
 
+### 0. Find out what version Railway is running — do this first
+
+`pg_dump` refuses to dump from a server newer than itself. So check the server
+before you download a client, or you may install the wrong one and have to do
+it twice.
+
+In Railway, open the **FlokusAcademy** service, go to the **Console** tab, and
+run:
+
+```
+python -c "import asyncio;from sqlalchemy import text;from app.database import async_session_maker,engine;asyncio.run((lambda: None)()) if 0 else None"
+```
+
+Simpler — in the **Postgres** service, open its **Data** or **Connect** tab and
+read the version there. Or from the Console of the API service:
+
+```
+python - <<'EOF'
+import asyncio
+from sqlalchemy import text
+from app.database import async_session_maker, engine
+async def main():
+    async with async_session_maker() as s:
+        print((await s.execute(text("SHOW server_version"))).scalar())
+    await engine.dispose()
+asyncio.run(main())
+EOF
+```
+
+Note the major number (the part before the first dot). Install a client that is
+**that version or newer**. A newer client reading an older server is fine; the
+reverse is not.
+
 ### 1. Install PostgreSQL's client tools
 
 The backup script drives three programs: `pg_dump`, `pg_restore` and `psql`.
@@ -78,6 +111,7 @@ Run it once by double-clicking. You should see something like:
 Flokus Academy - database backup (V2 / Postgres)
   source      shinkansen.proxy.rlwy.net:34567/railway
   destination G:\My Drive\Flokus_Backups\Academy_V2
+  created G:\My Drive\Flokus_Backups\Academy_V2
   live database has 143 assignments
   wrote flokus_v2_2026-08-28_2140.dump (0.3 MB)
   verified: 143 assignments readable in the archive
@@ -184,11 +218,64 @@ handle it without changes.
 
 ---
 
+## Has any of this been tested?
+
+The script and the restore procedure were exercised end to end on 2026-08-29
+against a real PostgreSQL 16 server — not against production, and not by
+reading the code:
+
+- a database built by the real migration chain, seeded, and loaded with 23
+  assignments; backup written and verified
+- restored into a separate empty database with the exact `pg_restore` command
+  in this document: 23 assignments, both accounts, revision `e5a2b8d17c40`,
+  and the row-level-security policies intact after the restore
+- verification refuses a truncated archive, a non-archive, a zero-byte file,
+  and an archive whose row count disagrees with the live database
+- the retention rule keeps 39 files in steady state after a year of daily
+  backups: every one of the last 14 days, then one per week
+
+What that does **not** prove is anything about *your* Railway database, your
+Google Drive path, or your Postgres client version. That is what the drill
+below is for. The script working is a precondition; your backup working is the
+thing.
+
 ## Restore drill log
 
 *Append a line each time you actually perform a restore. An empty list below
 means the backups are still unproven.*
 
-<!-- e.g. 2026-08-29 — restored flokus_v2_2026-08-28_2140.dump into a scratch
-     Railway database. 143 assignments, 61 xp_ledger rows, revision
-     e5a2b8d17c40. Matched the live database. -->
+**2026-08-29** — first real backup and first restore, both performed.
+
+Backup: `flokus_v2_2026-08-29_1308.dump` (0.1 MB), taken through a
+`railway connect Postgres --tunnel-only` tunnel rather than over public
+access. Live database reported 11 assignments; the script verified 11 readable
+inside the archive before pruning.
+
+Restore: into a `restore_test` database on the same server, with
+`pg_restore --no-owner --no-privileges`. Verified 11 assignments, both accounts
+(`dad`/teacher, `sonny`/student), and `alembic_version` = `e5a2b8d17c40`,
+matching what `/health/ready` reports for production.
+
+Two deviations from the procedure above, both deliberate:
+
+- **The tunnel, not public access.** Railway's `railway connect --tunnel-only`
+  prints a local host/port and holds an encrypted tunnel open, so the database
+  never needs a public endpoint. This is better than what this document
+  originally described and is now the recommended route. It does mean the
+  connection details are different every time, which is why the `.bat` file no
+  longer contains a database URL.
+- **A second database on the same server, not a second service.** Cheaper and
+  quicker, and it proves what matters: the archive is readable, the data is
+  complete, the schema and migration state restore. What it does *not* exercise
+  is restoring onto a brand-new server. `pg_restore` behaves the same either
+  way, but if you ever want the fuller rehearsal, add a second Postgres service
+  and restore into that.
+
+**Known limitation of this arrangement:** the tunnel requires a logged-in
+Railway CLI session, so this backup cannot run unattended from Task Scheduler
+the way V1's did. It is a manual step. The plan is to run it each Sunday
+alongside planning the week — an existing habit, which is the only kind that
+survives. **A ritual that lapses is the main risk to this backup now**, not
+anything technical. If several weeks pass with no new file in the Drive folder,
+that is the signal to automate it properly or move to Railway's Pro-plan
+scheduled backups as a second layer.
