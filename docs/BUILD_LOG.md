@@ -27,11 +27,14 @@
 | | |
 |---|---|
 | **The app** | One planning screen. The teacher types a week by hand; nothing is imported, scheduled or moved. |
-| **V2 in production** | Deployed on `main`, migration head `e5a2b8d17c40`. In real use for planning; has not run a school day. |
-| **V1** | Still running the 2026–27 year. Cutover is now a live question — the workflow objection is gone. |
+| **V2 in production** | `main` at `2fbd3ef`, migration head `e5a2b8d17c40`. **Cleared for the school year** — has still never run a school day. |
+| **V1** | Still holds the 2026–27 records. Cutover is a scheduling decision now, not an engineering one. |
 | **Tests** | 70 Playwright e2e, green. |
-| **Branch** | `main`, with `school-year-2026-27` kept in step. `hardening/go-live` open for review. |
-| **Ask Floki** | **Off** (`FLOKI_ENABLED=false`). A flag, not a deletion — see 2026-08-28 below. |
+| **Branch** | `main`. `hardening/go-live` merged 2026-08-28 and can be deleted. |
+| **Ask Floki** | **Off** (`FLOKI_ENABLED` unset → false). A flag, not a deletion. |
+| **Backups** | Own `pg_dump` to Google Drive via the Railway CLI tunnel. **Taken and restored 2026-08-29.** Manual — a Sunday habit, not a cron job. |
+| **Addresses** | `app.flokusacademy.com` is canonical. Root and `www` 301 to it via a Cloudflare Redirect Rule. `api.` unchanged. |
+| **Monitoring** | UptimeRobot on `/health/ready` and `app.`, 5-minute interval, email alerts. |
 
 **The phased build plan that used to live here is finished, and most of what it
 built is gone.** Phases 1–3 designed and delivered curriculum authoring, a CSV
@@ -42,17 +45,92 @@ below.
 
 ### Owed next
 
-- **A fresh analysis and roadmap**, to be written in a new session. This document
-  and `.agents/skills/lms-architecture/SKILL.md` are its inputs.
-- **Sonny's side.** His day view still has no ceiling (`daily_task_cap` exists in
-  config and has no reader). The friction conversation with him is still owed —
-  three concrete things that are confusing or dull, in his words.
-- **UFA / compliance.** What the Portfolio actually needs before the first report.
-  `grade_level` was specified and never wired up.
-- **Dead weight inventory.** `Unit`/`modules`, `Lesson.source_key`/`import_id`,
+The readiness audit of 2026-08-27 is the source for most of this; everything it
+called blocking is now closed. What follows is ordered by consequence, not by
+effort.
+
+**1 — Run one school day on V2 while V1 is still the record.** Not a feature
+pilot: a Monday, start to finish, both systems live, reconciled that evening.
+Everything shipped so far is static analysis and tests. The failures that
+matter on a school morning are the ones only a school morning finds. *This is
+the highest-value item on the list and it costs no code.*
+
+**2 — The Portfolio screen is broken, and it is the compliance record.**
+`PortfolioView.vue` reads `task.completed_at` and `task.course.title`; the API
+returns `actual_completion_date` and a bare `course_id` (`schemas.py:158-168`),
+so every row renders "Invalid Date" with a blank class name. The Export CSV
+button has no click handler at all. It also filters on `scheduled_date` rather
+than completion date, and does one day at a time. Needs: the right field names,
+a date range, and a working export. Confirm with Odyssey/UFA what actually has
+to be produced before designing the export.
+
+**3 — A safety event only reaches the parent if he opens the admin app.**
+`SafetyAlertBanner.vue:8-12` says so itself: *"There is no push or email channel
+in this deployment, which means this banner is the only way a parent finds
+out."* The whole reason `SafetyEvent` is separate from `StuckFlag` is that one
+of them must never be missed. Smallest fix that works: one HTTP call to an
+email or push service inside `ai_tutor.py:209-229`, wrapped so a failure can
+never break the child's screen. **Do this before Ask Floki is switched back on**
+— it is not urgent while the tutor is off, and it is a prerequisite for turning
+it on.
+
+**4 — Sonny's side.** The day view still has no ceiling: `repository.py:55-66`
+returns everything outstanding, so a sick week produces a wall of cards.
+`daily_task_cap` now has a reader, but only on the teacher's side
+(`week.py:128-134`). Needs a student-side cap plus an oldest-first catch-up
+policy. The friction conversation with him is still owed — three concrete
+things that are confusing or dull, in his words.
+
+**5 — The app connects to Postgres as a superuser, so RLS never applies.**
+Confirmed 2026-08-29 via `scripts/check_db_role.py`: role `postgres`,
+`usesuper` true, and RLS enabled *and* forced on every tenant table. The
+policies are correct and are skipped on every query. Harmless with one tenant;
+it is the backstop that is missing rather than data that is exposed. The fix is
+fiddlier than it looks — a non-superuser role must **own** the tables or
+Alembic's `preDeployCommand` cannot ALTER them and every deploy breaks.
+`FORCE ROW LEVEL SECURITY` exists precisely so an owning role is still subject
+to the policies. Safe to attempt now that a restore has been proven.
+
+**6 — Rotate the Postgres password.** It appeared in a working session twice.
+Not reachable from the internet while the Postgres service has no public
+endpoint, so this is hygiene rather than an incident — but it is mandatory
+before public access is ever enabled.
+
+**7 — Make the backup harder to forget.** It currently needs a logged-in
+Railway CLI session, so it cannot run unattended. The plan is Sunday, alongside
+week planning. If several weeks pass with no new file in the Drive folder, that
+is the signal to automate it properly or to reconsider Railway Pro (scheduled
+backups and PITR are Pro-only) as a *second* layer — never as the only one,
+since a same-vendor backup shares the failure it protects against.
+
+**8 — Ask Floki, when it comes back.** Rocky wants this feature; it is off, not
+deleted. Re-enabling needs, in order: a paid Gemini key (the unpaid tier trains
+on submitted prompts and permits human review), an honest decision about the
+terms' under-18 clause, item 3 above shipped, and only then
+`FLOKI_ENABLED=true`. A provider whose terms contemplate under-18 use with
+parental consent would be the durable answer.
+
+**9 — Smaller, genuinely optional.**
+- No security headers on the frontend at all — no CSP, HSTS, `X-Frame-Options`.
+  The frontend's serving config is **not in the repo**; it lives only in
+  Railway's UI, so it cannot be reviewed or rolled back. Commit it.
+- Per-username failed-login lockout. The rate limit is per-IP and in-memory
+  (`rate_limit.py:14`), so it resets on restart.
+- The retention purge runs only in the lifespan hook (`main.py:56-66`) — its
+  clock is "whenever you last deployed". Either schedule it or write down that
+  this is the real behaviour.
+- `SafetyEvent.excerpt` keeps 300 characters of the child's message forever
+  while the transcript is purged at 90 days. Probably intended; currently
+  unstated.
+- A landing page for `flokusacademy.com`, which is now free for one.
+  `docs/academy-site-copy.md` is the draft and needs rewriting.
+- Dead weight inventory: `Unit`/`modules`, `Lesson.source_key`/`import_id`,
   `day_of_week_hint`, `priority`, `school_day_offset`, `sequence_order`,
-  `resource_path`, `curriculum_seeder`. All deliberately kept; worth a decision
-  rather than drift.
+  `resource_path`, `curriculum_seeder`, and the live-but-unused
+  `POST /api/tasks/bulk`. All deliberately kept; worth a decision rather than
+  drift.
+- `create_entry` does not check that `course_id` belongs to the caller's tenant
+  (`week.py:163-172`). Latent until there is a second tenant.
 
 ---
 
@@ -108,6 +186,68 @@ the migrations have never run on Postgres, and one completion spec flaked once.
 ## Decisions changed in flight
 
 *Append here. Date, what changed, why. Empty is the correct state at the start.*
+
+### 2026-08-29 — Go-live: the last blockers closed, outside the code
+
+Nothing shipped today changed how the app behaves. All of it was the work that
+turns a correct application into an operable one, and most of it happened in
+Railway, Cloudflare and a Windows terminal rather than in this repository.
+
+**The backup exists, and has been restored.** `flokus_v2_2026-08-29_1308.dump`,
+11 assignments, verified inside the archive before pruning; restored into a
+`restore_test` database and confirmed at 11 assignments, both accounts,
+`alembic_version` = `e5a2b8d17c40`. Logged in `docs/BACKUP_AND_RESTORE.md`,
+which was the point — that log starting empty was the honest statement that
+the backups were unproven.
+
+Two route changes, both better than what was written:
+
+- **`railway connect Postgres --tunnel-only`, not public access.** Railway has
+  no built-in redirect or backup-to-elsewhere feature, and the runbook
+  originally said to add a public endpoint to the Postgres service. The CLI
+  tunnel prints a local host/port and holds an encrypted connection open, so
+  the database never gets a public endpoint at all. It needs an SSH key
+  (`ssh-keygen -t ed25519`), which Railway registers automatically.
+- **A second database on the same server, not a second service**, as the
+  restore target. Proves the archive is readable, the data complete, and the
+  schema and migration state restore. Does not exercise restoring onto fresh
+  infrastructure.
+
+**The cost of that route, recorded because it is the real risk:** the tunnel
+needs a logged-in CLI session, so the backup cannot run from Task Scheduler the
+way V1's did. It is a manual Sunday step, tied to week planning because an
+existing habit is the only kind that survives. Railway's own scheduled backups
+and PITR are Pro-plan only.
+
+**`scripts/set_pin.py` exists because changing a variable did nothing.**
+`ADMIN_PIN` and `STUDENT_PIN` are read only when *creating* a user that does
+not exist (`curriculum_seeder.py:17-31`). That is correct — re-running the
+seeder must not reset live credentials — but it means the variables look like
+the PINs while being only their initial values. Changing them in Railway,
+redeploying and feeling safer would have left the old four-digit PINs working,
+with nothing reporting the discrepancy.
+
+**`scripts/check_db_role.py` answers a question the schema cannot.** See item 5
+under *Owed next*.
+
+**The domain is settled.** `app.` is canonical; root and `www` redirect via a
+Cloudflare Redirect Rule, with both pointing at the reserved address
+`192.0.2.1` proxied — it routes nowhere and exists so Cloudflare can answer
+before anything is fetched. `api.` and `app.` stay CNAME/DNS-only; proxying
+them would put Cloudflare in front of Railway's TLS.
+
+**Two claims in the readiness audit were wrong, both caught by the owner:**
+
+- **`www.flokusacademy.com` never had a DNS record.** The audit said all three
+  hostnames served the app. The fetch tool used to check it had silently
+  normalised `www` to the apex, and that was taken at face value instead of
+  being checked against the zone.
+- **The root was its own Railway custom domain** (`x4i71v82.up.railway.app`),
+  not the same target as `app.` — Railway mints one CNAME target per domain.
+
+The general lesson, and it is the same one this log keeps recording in
+different clothes: *a tool that answers confidently is not evidence.* Both
+errors came from trusting a reading instead of looking at the source.
 
 ### 2026-08-28 — Going live: four blockers closed, and one behaviour deliberately removed
 
